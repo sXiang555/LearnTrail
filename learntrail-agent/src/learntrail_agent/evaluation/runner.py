@@ -281,7 +281,7 @@ def markdown(report):
 
 
 async def run(args,settings: Settings,token: str):
-    if json.loads(args.dataset.read_text()).get('schema_version') in {2,3,4}:
+    if json.loads(args.dataset.read_text()).get('schema_version') in {2,3,4,5}:
         from learntrail_agent.evaluation.framework import run_dataset
         return await run_dataset(args,settings,token)
     dataset=json.loads(args.dataset.read_text());rag_path=PROJECT_ROOT/dataset["rag_dataset"]
@@ -344,7 +344,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live",action="store_true",help="Explicit authorization for real Java, AI DB and billable model/embedding calls")
     parser.add_argument("--suite",choices=["all","rag","agent","contracts"],default="all")
-    parser.add_argument("--dataset",type=Path,default=PROJECT_ROOT/"evaluation/dataset-v4.json")
+    parser.add_argument("--dataset",type=Path,default=PROJECT_ROOT/"evaluation/dataset-v5.json")
     parser.add_argument('--dataset-version')
     parser.add_argument('--mode',choices=['validate','deterministic','live'],default='validate')
     parser.add_argument('--split',choices=['development','validation','test','all'],default='development')
@@ -361,7 +361,7 @@ def main():
     parser.add_argument("--answers",action="store_true")
     parser.add_argument("--ragas",action="store_true")
     args=parser.parse_args()
-    formal=json.loads(args.dataset.read_text()).get('schema_version') in {2,3,4}
+    formal=json.loads(args.dataset.read_text()).get('schema_version') in {2,3,4,5}
     if not formal and not args.live:parser.error("Legacy real evaluation requires --live")
     if args.max_model_calls is not None and args.max_model_calls<1:parser.error("Model budget must be positive")
     if args.max_judge_calls is not None and args.max_judge_calls<1:parser.error("Judge budget must be positive")

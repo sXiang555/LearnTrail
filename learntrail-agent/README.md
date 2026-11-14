@@ -87,39 +87,41 @@ HTTP、SSE、模型、工具、检索、Skills、Memory 和 Checkpoint 通过 Tr
 
 ## 评测与实验
 
-v4 数据集包含 **150 条场景**：65 条 RAG 问答与 85 条功能契约场景，覆盖 Agent、Memory、Skills、MCP、HITL；按 Development／Validation／Test 划分为90／30／30。RAG 标准答案绑定94项原文事实，固定语料为7篇业务文章。
+当前默认数据集为 **v5：150 条检索题、19 篇已发布文章**，Development／Validation／Test 为90／30／30，能力／回归为130／20。保留原65条RAG问题及其相关性标签，并将另外85条整理为文章检索问题；论文资料使用本站导读作为语料。
 
 | 评测层 | 核查内容 |
 | --- | --- |
-| 数据校验 | 场景 Schema、划分、相关来源、原文事实与内容哈希 |
-| 功能契约 | 工具选择与参数、执行轨迹、记忆隔离、审批与恢复、MCP 传输 |
-| 检索 | Recall／MRR／NDCG@K、归档命中、零相关误召回 |
-| 生成 | 回答与拒答状态、原文引用、独立 Judge 评分 |
-| 运行 | 请求成功、超时、模型／工具次数、Token、时延及成本估算 |
+| v5 数据校验 | 题目 Schema、分组划分、相关来源、原文事实与内容哈希 |
+| v5 生产检索 | Vector、BM25、Hybrid+RRF，Recall／MRR／NDCG@K及零相关误召回 |
+| 功能回归 | pytest 覆盖工具、执行轨迹、记忆隔离、审批恢复、MCP与数据库 |
+| 历史评测 | v1–v4保留混合能力案例、回答／拒答、引用与独立Judge实验入口 |
 
-真实检索实验使用 Java 授权正文、1024维 Embedding、隔离 PostgreSQL／pgvector 和生产 Retriever。64条有相关来源问题、K=5 的结果如下：
+真实检索实验使用 Java 授权正文、1024维 Embedding、隔离 PostgreSQL／pgvector 和生产 Retriever。三个方案共享同一次索引，每个方案执行150题，共450次搜索。Recall／MRR／NDCG按142条有相关来源的问题计算，另外8条零相关问题单列；K=5按Chunk排名计数，同文章重复Chunk不增加文档召回。
 
-| 方案 | Recall@5 | MRR@5 | NDCG@5 |
-| --- | ---: | ---: | ---: |
-| Vector Only | 0.9922 | 0.9120 | 0.9228 |
-| BM25 Only | 0.9766 | 0.9060 | 0.9147 |
-| Hybrid · RRF | **0.9922** | **0.9458** | **0.9466** |
+| 方案 | Recall@5 | MRR@5 | NDCG@5 | 零相关误召回 |
+| --- | ---: | ---: | ---: | ---: |
+| Vector Only | 0.9718 | 0.9034 | 0.9131 | 1/8 |
+| BM25 Only | 0.9683 | 0.9281 | 0.9330 | 8/8 |
+| Hybrid · RRF | **0.9965** | **0.9486** | **0.9544** | 8/8 |
 
-Hybrid 相比 Vector 的召回持平、MRR 提升0.03385；相比 BM25 的召回提升1.5625个百分点。65题真实 Hybrid 生成与独立 Judge 调用均完成，组合条件通过61题。该轮未启用 Reranker；零相关题独立报告，耗时按各次实验的实际运行条件记录。
+本轮Hybrid的召回和排名指标最高；Vector、BM25、Hybrid的检索条件通过数分别为144／150、137／150、141／150，包含零相关问题的判定。BM25分支带来的零相关误召回作为后续优化依据。v5聚焦检索，生成与Judge调用均为0，Reranker未启用；实验参数和结果见[v5实验记录](evaluation/results/v5-retrieval-summary.md)。
 
-源码：[评测 CLI](src/learntrail_agent/evaluation/runner.py) · [指标](src/learntrail_agent/evaluation/metrics.py) · [Judge](src/learntrail_agent/evaluation/judge.py) · [v4 数据](evaluation/dataset-v4.json) · [案例](evaluation/cases-v4.jsonl)
+源码：[评测 CLI](src/learntrail_agent/evaluation/runner.py) · [指标](src/learntrail_agent/evaluation/metrics.py) · [v5 数据](evaluation/dataset-v5.json) · [案例](evaluation/cases-v5.jsonl) · [语料](evaluation/corpus-v5.json) · [历史 v4](evaluation/dataset-v4.json)
 
 ```bash
 # 校验数据，不调用模型
 uv run --locked python -m learntrail_agent.evaluation.runner --mode validate --split all
 
-# 确定性场景执行：使用隔离 PostgreSQL 和受控模型
+# v5离线数据与文章快照BM25检查
 uv run --locked --group evaluation python -m learntrail_agent.evaluation.runner --mode deterministic --split all
 
-# 按需运行真实模型实验，明确限制预算
+# v5生产检索：私下配置LEARNTRAIL_EVAL_TOKEN；调用真实Embedding
 uv run --locked --group evaluation python -m learntrail_agent.evaluation.runner \
-  --mode live --live --categories rag --case-ids rag-001 \
-  --schemes vector bm25 hybrid --max-model-calls 3
+  --mode live --live --split all --schemes vector bm25 hybrid
+
+# 显式选择历史版本
+uv run --locked python -m learntrail_agent.evaluation.runner \
+  --dataset evaluation/dataset-v4.json --mode validate --split all
 ```
 
 ## 配置与启动
@@ -145,7 +147,7 @@ uv run --locked uvicorn learntrail_agent.deployment:app --host 0.0.0.0 --port 81
 uv run --locked --group evaluation pytest -q
 ```
 
-真实数据库测试通过私有 `LEARNTRAIL_TEST_DATABASE_URL` 启用，每个测试创建并清理独立 Schema。发布验证执行了654项包含隔离数据库的回归及12项部署入口测试；另有一项真实 Java 文章创建用例通过独立测试账号按需运行。域名端已验证真实 Agent SSE、身份隔离及进程重启后的会话恢复。
+真实数据库测试通过私有 `LEARNTRAIL_TEST_DATABASE_URL` 启用，每个测试创建并清理独立 Schema。GitHub Actions执行AI回归与默认v5数据校验；真实Java文章创建用例通过独立测试账号按需运行。域名端已有真实Agent SSE、身份隔离及进程重启后的会话恢复验证。
 
 ## 下一步
 

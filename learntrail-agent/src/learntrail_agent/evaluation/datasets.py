@@ -86,7 +86,7 @@ class Verification(Record):
 
 
 class EvaluationSpec(Record):
-    kind: Literal['rag_qa','functional_contract']
+    kind: Literal['rag_qa','rag_retrieval','functional_contract']
     gold_kind: Literal['source_quotes','scope_absence','code_contract']
     reference_scope: list[str] = Field(default_factory=list)
     search_scope: list[str] = Field(default_factory=list)
@@ -149,7 +149,7 @@ class EvaluationCase(Record):
 
 
 class DatasetManifest(Record):
-    schema_version: Literal[2,3,4]
+    schema_version: Literal[2,3,4,5]
     version: str = Field(pattern=r'^learntrail-eval-[0-9]+\.[0-9]+\.[0-9]+$')
     cases_file: str
     corpus_file: str
@@ -184,7 +184,7 @@ def load_dataset(path: Path) -> tuple[DatasetManifest, list[EvaluationCase], dic
     scenario_splits={}
     articles={row['slug']:row for row in corpus['sources']}
     for case in cases:
-        if manifest.schema_version in {3,4}:
+        if manifest.schema_version in {3,4,5}:
             if case.status=='draft' or case.execution is None or case.contract_tests:
                 raise ValueError('v3 requires execution plans, v3 status and no fixed test aliases')
             if case.status=='blocked' and not case.blocking_reason:
@@ -207,7 +207,7 @@ def load_dataset(path: Path) -> tuple[DatasetManifest, list[EvaluationCase], dic
                 supported={fact for e in case.evidence for fact in e.supports}
                 if not set(case.expected.required_facts)<=supported:raise ValueError('Missing fact evidence: '+case.id)
         keys=set(case.groups)|{'article:'+slug for slug in list(case.expected.relevant)+case.expected.forbidden}
-        if manifest.schema_version in {3,4}:
+        if manifest.schema_version in {3,4,5}:
             for slug in [case.execution.parameters.get('knowledge_slug'),*case.source.references]:
                 if slug in articles:keys.add('article:'+slug)
         for ev in case.evidence:
@@ -220,15 +220,15 @@ def load_dataset(path: Path) -> tuple[DatasetManifest, list[EvaluationCase], dic
         for key in keys:
             if key in grouped and grouped[key]!=case.split:raise ValueError('Split leakage: '+key)
             grouped[key]=case.split
-        if manifest.schema_version==4:
+        if manifest.schema_version in {4,5}:
             spec=case.evaluation
             if spec is None or case.status not in {'ready','blocked'} or 'human' in case.evaluators:
                 raise ValueError('v4 requires automatic grading and separate runtime results: '+case.id)
             if set(spec.reference_scope+spec.search_scope)-articles.keys():
                 raise ValueError('Unknown evaluation source: '+case.id)
-            if spec.kind=='rag_qa':
-                if not spec.reference_scope or not spec.search_scope or not spec.judge_required:
-                    raise ValueError('RAG requires source scopes and semantic grading: '+case.id)
+            if spec.kind in {'rag_qa','rag_retrieval'}:
+                if not spec.reference_scope or not spec.search_scope or spec.judge_required!=(spec.kind=='rag_qa'):
+                    raise ValueError('RAG requires source scopes and matching grading mode: '+case.id)
                 if case.expected.answer_available:
                     if spec.gold_kind!='source_quotes' or not case.expected.required_facts:
                         raise ValueError('Answerable v4 case requires extractive facts: '+case.id)
@@ -241,6 +241,10 @@ def load_dataset(path: Path) -> tuple[DatasetManifest, list[EvaluationCase], dic
                     raise ValueError('No-answer cases require scope-based absence, not unsupported facts: '+case.id)
             elif spec.gold_kind!='code_contract' or spec.judge_required:
                 raise ValueError('Functional fixtures must not pretend to be semantic evaluation: '+case.id)
+            if manifest.schema_version==5 and (case.category!='rag' or spec.kind!='rag_retrieval'
+                    or case.evaluators!=['deterministic'] or case.execution.kind!='rag_evidence'
+                    or case.execution.operation!='evidence' or case.history):
+                raise ValueError('v5 is retrieval-only: '+case.id)
     for source in articles.values():
         digest=hashlib.sha256((source['title']+'\n\n'+source['text']).encode()).hexdigest()
         if digest!=source['content_hash']:raise ValueError('Corpus fingerprint mismatch')

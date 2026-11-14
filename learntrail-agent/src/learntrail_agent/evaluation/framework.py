@@ -35,7 +35,7 @@ def dataset_summary(manifest,cases):
 def offline_bm25(case,corpus,settings):
     """Actual BM25 over frozen whole articles; separate from production chunk retrieval."""
     denied=set(case.setup.get('denied_slugs',[]))
-    allowed=set(case.evaluation.search_scope) if case.evaluation and case.evaluation.kind=='rag_qa' else None
+    allowed=set(case.evaluation.search_scope) if case.evaluation and case.evaluation.kind in {'rag_qa','rag_retrieval'} else None
     documents=[s for s in corpus['sources'] if s['slug'] not in denied and (allowed is None or s['slug'] in allowed)]
     terms={s['slug']:term_counts(s['text']) for s in documents};df=Counter()
     for counts in terms.values():df.update(counts.keys())
@@ -146,6 +146,20 @@ def case_legacy(case):
 async def live_case(case,state,user,token,judge,budget,scheme,corpus):
     from learntrail_agent.evaluation.runner import rag_suite,agent_suite
     if case.status=='blocked':return {'status':'unverified','reason':case.blocking_reason,'observations':{}}
+    if case.evaluation and case.evaluation.kind=='rag_retrieval':
+        from learntrail_agent.rag.schemas import SearchRequest
+        strategy='hybrid' if scheme=='auto' else scheme
+        if strategy not in {'vector','bm25','hybrid'}:
+            return {'status':'unverified','reason':'RETRIEVAL_SCHEME_UNSUPPORTED','observations':{}}
+        result=await state.retriever.search(user.user_id,SearchRequest(query=case.question,
+            mode=strategy,top_k=5,article_slugs=case.evaluation.search_scope,rerank=False),token)
+        retrieval={'relevant':[s for s,g in case.expected.relevant.items() if g>0],
+            'grades':case.expected.relevant,'forbidden':case.expected.forbidden,
+            'ranked':[h.slug for h in result.results],'unit':'chunk'}
+        return {'status':'executed','scope':'real_java_postgres_retrieval',
+            'observations':{'retrieval':retrieval},'retrieval':result.model_dump(mode='json'),
+            'embedding_usage':result.embedding_usage.model_dump() if result.embedding_usage else None,
+            'answer':None,'model_calls':0,'judge_calls':0,'duration_ms':result.duration_ms}
     if case.execution:
         plan=case.execution
         supported=(plan.kind=='rag_evidence' and plan.operation=='evidence') or (
@@ -203,7 +217,7 @@ def v4_stages(case,row):
     spec=case.evaluation
     if spec is None:return row
     row['evaluation_kind']=spec.kind
-    if spec.kind!='rag_qa' and row.get('scope')!='real_java_postgres_models':
+    if spec.kind not in {'rag_qa','rag_retrieval'} and row.get('scope')!='real_java_postgres_models':
         row['evaluation_status']='passed' if row.get('contract_success') is True else (
             'failed' if row.get('status')=='error' else 'not_run')
         row['model_quality_evaluated']=False
@@ -217,7 +231,8 @@ def v4_stages(case,row):
         'semantic':{'status':judge.get('status','not_run'),'result':judge or None}}
     failed=(row['evaluations']['retrieval']['status']=='failed' or (scored and not judge.get('task_success'))
         or observations.get('abstention_correct') is False or observations.get('task_success') is False)
-    row['evaluation_status']='failed' if failed else ('passed' if scored and row.get('answer') else 'partial')
+    passed=(scored and row.get('answer')) or (spec.kind=='rag_retrieval' and row['evaluations']['retrieval']['status']=='passed')
+    row['evaluation_status']='failed' if failed else ('passed' if passed else 'partial')
     row['model_quality_evaluated']=scored
     return row
 
@@ -241,8 +256,8 @@ def report_markdown(report):
             '', '确定性检查通过率：`'+json.dumps(summary['contract_success_rate'],ensure_ascii=False)+'`']
     lines+=['','## 配对对比', '```json',json.dumps(report.get('paired_comparisons',[]),ensure_ascii=False,indent=2),'```']
     lines+=['','## 逐题结果与诊断','','详见 report.json 与逐题 cases/*.json；按类别列出检索、工具、Memory、Skills、MCP、HITL 和工程指标。',
-        'v3 按每题 execution 运行自己的问题、前置数据、参数和断言；逐题 scope 区分证据核对、受控模型 Graph、真实 SQL 与本地 MCP。',
-        'RAG 确定性模式运行文章快照级 BM25 并校验证据；受控模型输出不计为真实模型的回答质量。旧版 referenced_contract 仅保留用于复现历史报告。',
+        '逐题 scope 区分实际执行范围；v5仅做生产检索，不执行回答生成、Judge或其他模块。',
+        'RAG确定性模式为文章快照级BM25；live模式调用生产Retriever。受控模型输出不计为真实模型质量，旧版referenced_contract仅保留历史复现。',
         '缺少观测的指标为空；执行结果不自动改变数据集审核状态。Test 需显式选择。', '', '## 失败与待验证']
     for row in report['results']:
         if row.get('status') in {'error','unverified'} or row.get('evaluation_status')=='failed' or row.get('observations',{}).get('task_success') is False:
@@ -255,6 +270,9 @@ def report_markdown(report):
 def evaluation_budgets(chosen,args,settings):
     """Limits scale with an explicitly selected experiment, independently of concurrency."""
     variants=len(args.schemes or ['auto'])*args.repeats
+    if all(case.evaluation and case.evaluation.kind=='rag_retrieval' for case in chosen):
+        return {'model_calls':0,'judge_calls':0,'source':'retrieval-only: generation and judge disabled',
+            'selected_cases':len(chosen),'scheme_count':len(args.schemes or ['vector','bm25','hybrid']),'repeats':args.repeats}
     active=[case for case in chosen if case.status!='blocked']
     model_default=variants*sum(1 if case.category=='rag' else settings.agent_max_rounds for case in active)
     judge_default=variants*len(active)
@@ -290,9 +308,9 @@ async def run_dataset(args,settings,token=''):
     report['configuration']['reranker_configured']=settings.reranker_configured
     report['budgets']=limits
     config=settings.model_copy(update={'observability_enabled':True,'observability_dir':folder/'telemetry',
-        'mcp_servers_file':None,'judge_max_calls':limits['judge_calls']})
+        'mcp_servers_file':None,'judge_max_calls':max(1,limits['judge_calls'])})
     telemetry=Telemetry(config);cache={};budget=[0,limits['model_calls']]
-    schemes=args.schemes or ['auto']
+    schemes=args.schemes or (['vector','bm25','hybrid'] if manifest.schema_version==5 and args.mode=='live' else ['auto'])
     async def execute(state=None,user=None,judge=None,only_repeat=None,only_scheme=None):
         for repeat in ([only_repeat] if only_repeat else range(1,args.repeats+1)):
             for scheme in ([only_scheme] if only_scheme else schemes):
@@ -308,14 +326,14 @@ async def run_dataset(args,settings,token=''):
                         except AppError as error:row={'status':'error','error':error.code,'observations':{}}
                         except Exception as error:row={'status':'error','error':'EVALUATION_CASE_FAILED','error_type':type(error).__name__,'observations':{}}
                     telemetry.finish(span,'evaluation.case',started,values={'error_code':row.get('error')})
-                    if manifest.schema_version==4:
+                    if manifest.schema_version in {4,5}:
                         row.update(question=case.question,reference_answer=case.expected.reference_answer,
                             gold_validation=case.evaluation.gold_kind)
                     row.update(id=case.id,category=case.category,collection=case.collection,review_status=case.status,scheme=scheme,repeat=repeat,
                         trace_id=tid,duration_ms=round((time.monotonic()-started)*1000,2))
                     report['results'].append(row);private_json(folder/'cases'/f'{case.id}-{scheme}-{repeat}.json',row)
     try:
-        if args.mode=='deterministic' and manifest.schema_version in {3,4}:
+        if args.mode=='deterministic' and manifest.schema_version in {3,4,5}:
             needs_db=any(c.execution.kind in {'graph','memory','hitl'} or c.execution.operation=='other_session' or c.execution.parameters.get('exercise_tool') for c in chosen)
             if needs_db and config.database_url.get_secret_value():
                 async with isolated_database(config) as schema:
@@ -324,6 +342,18 @@ async def run_dataset(args,settings,token=''):
                     async with app.router.lifespan_context(app):await execute(app.state)
             else:await execute()
         elif args.mode=='deterministic':await execute()
+        elif manifest.schema_version==5:
+            # One corpus/index and one telemetry lifetime for all retrieval strategies.
+            # No Judge or BudgetedModel is constructed on this path.
+            async with isolated_database(config) as schema:
+                local=config.model_copy(update={'database_schema':schema,'checkpoint_key_file':folder/'retrieval.key'})
+                app=create_app(local,telemetry=telemetry)
+                async with app.router.lifespan_context(app):
+                    state=app.state;user=await authenticate_token(token,state.jwt_public_key,state.http,local)
+                    data={'sources':[{'slug':s['slug'],'content_hash':s['content_hash'],'available':True} for s in corpus['sources']]}
+                    _,report['corpus_index']=await prepare_corpus(state,user,token,data,True)
+                    report['judge_calls']=[]
+                    await execute(state,user)
         else:
             # Reuse the existing isolation/migration/Java corpus verification logic.
             report['judge_calls']=[]

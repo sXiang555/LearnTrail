@@ -71,7 +71,7 @@ class CaseRunner:
             return {'status':'unverified','reason':case.blocking_reason,'scope':'blocked','observations':{}}
         plan=case.execution
         if plan is None:raise ValueError('Case execution plan missing')
-        if case.evaluation and case.evaluation.kind=='rag_qa':
+        if case.evaluation and case.evaluation.kind in {'rag_qa','rag_retrieval'}:
             return await self.run_rag_qa(case)
         if (plan.kind in {'graph','memory','hitl'} or plan.operation=='other_session' or plan.parameters.get('exercise_tool')) and (self.state is None or self.state.pool is None):
             return {'status':'unverified','reason':'DATABASE_REQUIRED','scope':plan.kind,'observations':{}}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 5,
+  "version": "learntrail-eval-5.0.0",
+  "cases_file": "cases-v5.jsonl",
+  "corpus_file": "corpus-v5.json",
+  "categories": {"rag": 150},
+  "splits": {"development": 90, "validation": 30, "test": 30},
+  "legacy_dataset": "dataset-v4.json",
+  "changelog": [
+    "5.0.0: user requested 150 retrieval-only cases, replacing the mixed-capability acceptance scope while preserving historical v1-v4 files.",
+    "Reuse 65 former RAG questions with source.legacy_id mapping; rewrite the other 85 using actual published article evidence. New IDs rag-001 through rag-150.",
+    "19 frozen Java-authorized published articles; original seven content hashes unchanged. External papers contribute only their on-site guides.",
+    "Evaluate production vector, BM25 and hybrid RRF retrieval on the same indexed corpus; no chat generation, LLM Judge or Reranker.",
+    "Keep source/topic groups in one split. Report article relevance over chunk ranks, per-case hits, errors, zero-relevance false positives and all-source recall checks."
+  ]
+}
