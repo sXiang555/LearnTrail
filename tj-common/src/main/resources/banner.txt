@@ -1,0 +1,6 @@
+
+  LearnTrail / 学途
+  Learning · Content · Commerce
+
+  Service: ${spring.application.name:learntrail}
+  Spring Boot: ${spring-boot.version}

@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "origin": "2026-11-12 actual Java published article snapshots; manually annotated before retrieval runs",
+  "metrics": "Article-level qrels; K counts returned chunks, not deduplicated articles. Empty-qrel cases excluded from Recall/MRR; reported separately as negative nonempty rate.",
+  "sources": [
+    {
+      "slug": "article-2120326785059332098",
+      "title": "用事务守住一次积分解锁",
+      "content_hash": "95f632161c49c8ae5b659fdaf963eba69490dc6e9b89bb4ecb3aca187c62a587",
+      "available": true
+    },
+    {
+      "slug": "article-2120326750192082945",
+      "title": "多智能体协作：模式、上下文与成本",
+      "content_hash": "908d24314b3eb5ccbfc69e52b6d2795c496fe5df65b6eb5d966120ea1bd2c6c2",
+      "available": true
+    },
+    {
+      "slug": "article-2120100149332357122",
+      "title": "LearnTrail 使用指南：阅读、解锁与创作",
+      "content_hash": "428024ce76a0bbfe8cf01ac4eb8fe90e41b9a160d6b7e302ebf9951d78f6de61",
+      "available": true
+    },
+    {
+      "slug": "ship-a-small-change",
+      "title": "上线前怎么验证一个小改动",
+      "content_hash": "82e2da5cbcc52799321b4cceff5f636c709a8530d799ed51dd03c5fc6c83febe",
+      "available": true
+    },
+    {
+      "slug": "design-access-control",
+      "title": "从试看走到完整观看",
+      "content_hash": "daa3673f7d58a82a47c4f79f921a7ad781dd84d41051671e8fa1dc78cbc1826b",
+      "available": true
+    },
+    {
+      "slug": "reliable-async-events",
+      "title": "异步消息失败时怎么排查",
+      "content_hash": "6b926ba4d2a7a8dfece4433f49629299631b8bb63872b0300872665435e19499",
+      "available": true
+    },
+    {
+      "slug": "trace-a-request",
+      "title": "跟踪一次微服务请求",
+      "content_hash": "e0b85ab982e98ac39aba3beee7edfd141083016f20f90d4cf873447e06fa9082",
+      "available": true
+    },
+    {
+      "slug": "article-2120719239864455169",
+      "title": "已归档的真实 Embedding 专用验收文章",
+      "available": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "semantic-wallet",
+      "category": "semantic",
+      "query": "同一个人从两个浏览器窗口购买相同课程，怎样避免余额被消费两遍？",
+      "relevant": [
+        "article-2120326785059332098"
+      ],
+      "answer_available": true,
+      "evidence": "钱包行锁、解锁流水复合业务键与权益检查"
+    },
+    {
+      "id": "keyword-consumer",
+      "category": "keyword_ambiguity",
+      "query": "消息消费失败，消息已经在队列里，应该检查什么？这里的消费不是消费积分。",
+      "relevant": [
+        "reliable-async-events"
+      ],
+      "answer_available": true,
+      "evidence": "消费者的确认、异常和重试日志；按业务标识区分下游写入失败"
+    },
+    {
+      "id": "semantic-tracing",
+      "category": "semantic",
+      "query": "一个操作穿过好几个后台系统，如何找出到底在哪一跳出错？",
+      "relevant": [
+        "trace-a-request"
+      ],
+      "answer_available": true,
+      "evidence": "沿同一请求 ID 检查网关与业务服务，区分连接、超时和业务错误"
+    },
+    {
+      "id": "cross-release-access",
+      "category": "cross_article",
+      "query": "上线前如何用独立账号复验业务，并检查试看用户拿不到完整播放权？",
+      "relevant": [
+        "ship-a-small-change",
+        "design-access-control"
+      ],
+      "answer_available": true,
+      "evidence": "实际入口独立账号复验；两个账号直接请求非试看分集"
+    },
+    {
+      "id": "cross-withdrawal",
+      "category": "cross_article",
+      "query": "创作者下架和运营屏蔽，对已经解锁课程的读者分别有什么影响？",
+      "relevant": [
+        "article-2120100149332357122",
+        "article-2120326785059332098"
+      ],
+      "answer_available": true,
+      "evidence": "已有权益可看最后已发布内容；运营屏蔽停止播放授权和讨论"
+    },
+    {
+      "id": "no-answer-voice",
+      "category": "no_answer",
+      "query": "平台支持哪些语音克隆模型，训练时学习率应该设多少？",
+      "relevant": [],
+      "answer_available": false,
+      "evidence": "现有语料没有语音克隆模型或训练参数"
+    },
+    {
+      "id": "external-fulltext",
+      "category": "external_boundary",
+      "query": "多智能体协作外部原文的完整代码示例和图表分别是什么？",
+      "relevant": [
+        "article-2120326750192082945"
+      ],
+      "answer_available": false,
+      "evidence": "本站只有自写导读，未收录原文全文"
+    },
+    {
+      "id": "archived-article",
+      "category": "withdrawn",
+      "query": "真实 Embedding 索引验收文章更新版本中，如何整代替换索引避免混入旧块？",
+      "relevant": [],
+      "answer_available": false,
+      "forbidden": [
+        "article-2120719239864455169"
+      ],
+      "evidence": "该专用文章已经归档；不能通过旧索引作为来源"
+    }
+  ]
+}

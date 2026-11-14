@@ -1,0 +1,54 @@
+[project]
+name = "learntrail-agent"
+version = "0.1.0"
+description = "LearnTrail independent Python AI service"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.135.2,<0.136",
+    "uvicorn>=0.34,<1.0",
+    "pydantic>=2.10,<3.0",
+    "pydantic-settings>=2.7,<3.0",
+    "httpx>=0.28.1,<0.29",
+    "anyio>=4.9,<5.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "psycopg-pool>=3.2,<4.0",
+    "pyjwt[crypto]>=2.10,<3.0",
+    "langgraph==1.0.10",
+    "langgraph-checkpoint-postgres==3.0.4",
+    "langgraph-checkpoint>=4.0,<5.0",
+    "langchain-core>=1.2.22,<1.3",
+    "mcp==1.30.0",
+    "jsonschema>=4.26,<5",
+    "pyyaml>=6.0.3,<7",
+    "langfuse==5.2.0",
+    "opentelemetry-sdk==1.45.2",
+    "opentelemetry-exporter-otlp-proto-http==1.45.2",
+]
+
+[dependency-groups]
+evaluation = ["ragas==0.4.3"]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=1.0,<2.0",
+    "respx>=0.22,<0.23",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Stable OTel 1.45.2 requires these officially versioned protocol packages.
+# Keep the exception explicit, rather than allowing arbitrary prereleases.
+prerelease = "explicit"
+constraint-dependencies = [
+    "opentelemetry-semantic-conventions==0.66b2",
+    "opentelemetry-exporter-http-transport==0.66b2",
+    "opentelemetry-exporter-otlp-common==0.66b2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"

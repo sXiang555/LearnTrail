@@ -1,0 +1,46 @@
+server:
+  port: 8090  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+spring:
+  profiles:
+    active: dev
+  application:
+    name: learning-service
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml
+        shared-configs: # 共享配置
+          - data-id: shared-spring.yaml # 共享spring配置
+            refresh: false
+          - data-id: shared-redis.yaml # 共享redis配置
+            refresh: false
+          - data-id: shared-mybatis.yaml # 共享mybatis配置
+            refresh: false
+          - data-id: shared-logs.yaml # 共享日志配置
+            refresh: false
+          - data-id: shared-feign.yaml # 共享feign配置
+            refresh: false
+          - data-id: shared-mq.yaml # 共享mq配置
+            refresh: false
+tj:
+  swagger:
+    enable: true
+    enableResponseWrap: true
+    package-path: com.tianji.learning.controller
+    title: 学途 LearnTrail · 学习与互动 API
+    description: 学习进度、课表、问答、签到与积分排行
+    contact-name: LearnTrail Maintainers
+    contact-url: ""
+    contact-email: ""
+    version: v1.0
+  jdbc:
+    database: tj_learning
+  auth:
+    resource:
+      enable: true
+      exclude-login-paths:
+        - /studio-articles/published
+        - /studio-articles/published/*
+        - /studio-articles/published-counts

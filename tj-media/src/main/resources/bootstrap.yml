@@ -1,0 +1,71 @@
+server:
+  port: 8084  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+spring:
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 101MB
+  profiles:
+    active: dev
+  application:
+    name: media-service
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml
+        shared-configs: # 共享配置
+          - data-id: shared-spring.yaml # 共享spring配置
+            refresh: false
+          - data-id: shared-redis.yaml # 共享redis配置
+            refresh: false
+          - data-id: shared-logs.yaml # 共享日志配置
+            refresh: false
+          - data-id: shared-mybatis.yaml # 共享mybatis配置
+            refresh: false
+          - data-id: shared-feign.yaml # 共享feign配置
+            refresh: false
+tj:
+  swagger:
+    enable: true
+    package-path: com.tianji.media.controller
+    title: 学途 LearnTrail · 媒资与播放 API
+    description: 文件与视频媒资管理、上传授权与播放签名
+    contact-name: LearnTrail Maintainers
+    contact-url: ""
+    contact-email: ""
+    version: v1.0
+    enableResponseWrap: true
+  auth:
+    resource:
+      enable: true
+      excludeLoginPaths:
+        - /medias/signature/play
+        - /medias/studio/playback/**
+  jdbc:
+    database: tj_media
+  platform:
+    file: TENCENT
+    media: TENCENT
+  tencent:
+    appId: "${LEARNTRAIL_TENCENT_APP_ID}"
+    secretId: "${LEARNTRAIL_TENCENT_SECRET_ID}"
+    secretKey: "${LEARNTRAIL_TENCENT_SECRET_KEY}"
+    vod:
+      enable: true
+      vodValidSeconds: 7776000
+      region: "ap-shanghai"
+      procedure: "wisehub-base"
+      urlKey: "${LEARNTRAIL_TENCENT_VOD_URL_KEY}"
+      pfcg: "basicDrmPreset"
+    cos:
+      enable: true
+      region: "ap-shanghai"
+      bucket: "${LEARNTRAIL_TENCENT_COS_BUCKET}"
+      multipartUploadThreshold: 5242880 # 5mb，触发分片上传的阈值
+      minimumUploadPartSize: 1048576 # 1mb，分片的最小大小
+learntrail:
+  media:
+    local-directory: "${LEARNTRAIL_LOCAL_VIDEO_DIR:}"
+    ffmpeg: "${LEARNTRAIL_FFMPEG:ffmpeg}"

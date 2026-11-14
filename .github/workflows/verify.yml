@@ -1,0 +1,95 @@
+name: LearnTrail checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: learntrail-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: maven
+          cache-dependency-path: "**/pom.xml"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Check public sources and Maven metadata
+        run: python3 scripts/verify_repository.py
+      - name: Check launcher syntax and offline behavior
+        run: |
+          sh -n startup.sh
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      - name: Compile all Java sources and test sources
+        # Existing integration tests need infrastructure; this job never runs them.
+        run: mvn -B -Dstyle.color=never -DskipTests clean test-compile
+      - name: Test platform rules without infrastructure
+        run: mvn -B -Dstyle.color=never -pl tj-user,tj-course,tj-learning,tj-auth/tj-auth-service,tj-trade,tj-promotion,tj-remark -am -Dtest=UserOperationsServiceTest,UserAccountSecurityTest,DiscussionSecurityTest,StudioLifecycleTest,CreatorRankingTest,StudioPointsServiceTest,StudioArticleServiceTest,LearningRecordAccessTest,LearningRecordCacheTest,AccountRefreshTest,LearningActivityServiceTest,PointsSettlementServiceTest,PointsCouponServiceTest,OrderPointsBoundaryTest,PointsOrderServiceTest,PointsOrderStoreTest,ContentLikeServiceTest,ContentStatsOutboxTest,ArticleStatsListenerTest -Dsurefire.failIfNoSpecifiedTests=false test
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/learntrail-web/package-lock.json
+      - name: Test and build creator platform frontend
+        working-directory: frontend/learntrail-web
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: learntrail_ai_test
+          POSTGRES_USER: learntrail_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - "127.0.0.1:5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U learntrail_test -d learntrail_ai_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      LEARNTRAIL_TEST_DATABASE_URL: postgresql://learntrail_test@127.0.0.1:5432/learntrail_ai_test
+    defaults:
+      run:
+        working-directory: learntrail-agent
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: learntrail-agent/uv.lock
+      - name: Install locked AI and evaluation dependencies
+        run: uv sync --locked --group evaluation
+      - name: Enable vector in the disposable CI database
+        run: uv run --locked python -c "import os, psycopg; c=psycopg.connect(os.environ['LEARNTRAIL_TEST_DATABASE_URL'],autocommit=True); c.execute('CREATE EXTENSION IF NOT EXISTS vector'); c.close()"
+      - name: Test AI APIs, Graph, RAG, MCP, memory and evaluation
+        run: uv run --locked --group evaluation pytest -q -k 'not test_live_java_article_lifecycle_with_synthetic_embeddings'
+      - name: Validate the evaluation dataset
+        run: uv run --locked python -m learntrail_agent.evaluation.runner --mode validate --split all

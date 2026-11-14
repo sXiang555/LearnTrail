@@ -1,0 +1,27 @@
+{
+  "version": "learntrail-eval-v1",
+  "provenance": "Manually specified expectations from existing Java APIs, tool contracts and the two reviewed runtime Skills; not sampled user chat logs. Synthetic contract facts are never claimed as real user preferences.",
+  "rag_dataset": "tests/fixtures/rag_retrieval_cases.json",
+  "agent_cases": [
+    {"id":"direct","question":"只回答：你好。无需查询任何业务数据。","reference":"你好。直接回答，不应调用业务工具。","expected":{"required_tools":[],"allowed_tools":[],"status":"succeeded"}},
+    {"id":"article-keyword","question":"请查询站内标题或摘要包含 Python 的已发布文章，仅第一页，最多 3 篇。不要查学习进度。","reference":"按 Java 已发布文章 API 返回实际标题/摘要；无匹配时如实说明，不能编造文章或声称读过全文。","expected":{"required_tools":["search_articles"],"arguments":{"search_articles":{"keyword":"Python","page_no":1,"page_size":3}},"status":"succeeded"}},
+    {"id":"learning-progress","question":"查询我目前的学习进度，先列本人课表第一页最多 3 门，暂时不逐门查询。","reference":"查询本人的真实 Java 课表，空课表明确说明；不能写学习记录。","expected":{"required_tools":["get_learning_progress"],"arguments":{"get_learning_progress":{"page_no":1,"page_size":3}},"status":"succeeded"}},
+    {"id":"parallel-read","question":"分别查标题/摘要含 Python 的文章（第一页最多 3 篇），以及我的学习课表（第一页最多 3 门）。这是两个独立只读查询。","reference":"两项实际查询均应完成，输出与真实工具数据一致；可在一轮并行调用。","expected":{"required_tools":["search_articles","get_learning_progress"],"arguments":{"search_articles":{"keyword":"Python","page_size":3},"get_learning_progress":{"page_size":3}},"status":"succeeded"}},
+    {"id":"knowledge-skill","question":"请查询已索引文章中关于异步消息消费失败的知识，有原文依据才回答并给出处；没有依据就明确说明。","skill":"knowledge-learning","reference":"必须基于可读文章 Chunk；可以查文章补充发现，不能从外链导读推测原文。","expected_skill":"knowledge-learning","expected":{"required_tools":["search_knowledge_base"],"allowed_tools":["search_knowledge_base","search_articles"],"status":"succeeded"}},
+    {"id":"analysis-auto","question":"分析我的学习进度，先查本人课表第一页最多 3 门，再给下一步建议。没有课表就直接说明，不能捏造。","reference":"自动选择 learning-analysis，真实进度和建议分开，不能将建议保存为真实学习记录。","expected_skill":"learning-analysis","expected":{"required_tools":["get_learning_progress"],"arguments":{"get_learning_progress":{"page_size":3}},"status":"succeeded"}},
+    {"id":"memory-followup","question":"请解释 Python async/await，不需要外部资料，并按我已确认的讲解偏好组织。","setup_memory":{"memory_type":"preference","key":"answer_style","content":"评测样例：先用一句结论，再给一个短代码示例","confirmed":true},"reference":"有 Memory 时按已确认偏好先一句结论再短代码示例；无 Memory 变体只测试消融，不应凭空声称知道用户偏好。","expected":{"required_tools":[],"allowed_tools":[],"status":"succeeded"}}
+  ],
+  "controlled_contracts": {
+    "memory_quote":"请记住：评测样例偏好使用简短代码讲解",
+    "memory_content":"评测样例偏好使用简短代码讲解",
+    "demo_title":"评测专用 AI 草稿",
+    "demo_outline":"先学习异步接口，再编写可复现测试；仅 AI 演示数据。",
+    "mcp_topic":"评测专用异步学习大纲"
+  },
+  "comparisons": {
+    "rag":["vector","bm25","hybrid","hybrid_reranker"],
+    "agent":["baseline","prompt_checklist","no_memory","no_skills"],
+    "historical_handwritten_loop":{"status":"unverified","reason":"The handwritten loop was replaced by LangGraph; no equivalent frozen historical implementation/environment is available. Do not recreate a second production executor or fabricate a comparison."}
+  },
+  "known_open_issues":["Zero-relevance false positives and real Reranker benefit remain unresolved","Occasional real model timeouts and recovery policy remain unresolved","Unknown external non-idempotent write outcomes must never automatically retry"]
+}

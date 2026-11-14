@@ -1,0 +1,6 @@
+# Only the selected built JAR and Dockerfile belong in the image context.
+**
+!**/
+!Dockerfile
+!app.jar
+!**/target/*.jar

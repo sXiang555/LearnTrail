@@ -1,0 +1,18 @@
+{
+  "schema_version": 3,
+  "version": "learntrail-eval-3.0.0",
+  "cases_file": "cases-v3.jsonl",
+  "corpus_file": "corpus-v2.json",
+  "categories": {"rag": 70, "agent": 35, "memory": 15, "skills": 10, "mcp": 10, "hitl": 10},
+  "splits": {"development": 90, "validation": 30, "test": 30},
+  "legacy_dataset": "dataset-v2.json",
+  "changelog": [
+    "3.0.0: preserve v1/v2; replace fixed pytest aliases with executable per-case parameters and assertions.",
+    "Expand article evidence to stable complete source spans with necessary-fact bindings and graded relevance.",
+    "Correct unknown HITL outcomes, Memory types/content and unsupported latest-course query; retain Skills-010 expected knowledge-learning.",
+    "Verify scope explicitly: evidence contract, controlled Graph/native Java-response fixture, real isolated SQL, local MCP transport, or real model quality.",
+    "Reuse adapter code across splits; forbid duplicate executable inputs and preserve article/topic grouping. No fixed pytest function defines a sample.",
+    "2026-11-13: 149 per-case checks passed with real isolated PostgreSQL and local MCP; 84 verified in declared contract scopes, 65 RAG candidates pending semantic evidence review, 1 blocked latest-learning contract.",
+    "Skills-010 expected label retained; fix guide trigger selection and learning-analysis combined article/progress tool coverage. Preserve failed experiment reports."
+  ]
+}

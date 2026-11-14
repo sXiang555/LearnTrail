@@ -1,0 +1,208 @@
+{
+  "version": "2026-11-13-rag-agent-v1",
+  "description": "显式演示创作者、论文外链导读与本站原创无声知识动画。所有热度保持真实，不创建关注、评论、交易或学习进度。",
+  "creators": [
+    {
+      "key": "retrieval",
+      "displayName": "向量与检索 · 演示",
+      "headline": "从稀疏检索到知识树，拆解 RAG 的检索层。",
+      "bio": "LearnTrail 演示策展空间，内容由平台整理，不代表独立真实用户或论文作者。围绕检索增强生成、双编码器与层次索引组织论文导读；原文归原作者所有，本站不提供论文全文。",
+      "tone": "forest",
+      "seriesTitle": "RAG 检索入门：从问题到证据",
+      "subtitle": "一分钟知识动画，串起分块、双路召回与引用。",
+      "video": {
+        "label": "RETRIEVAL / 01",
+        "nodes": ["问题", "分块", "召回", "证据", "回答"],
+        "scenes": [
+          {"title": "先把知识放在可更新的地方", "lines": ["问题：为什么只依赖模型记忆不够？", "把知识来源与生成模型分开管理。", "知识更新后重建相关索引，不假定模型已经学会新内容。"], "active": 0},
+          {"title": "分块不是越短越好", "lines": ["按段落和标题切分，保留来源与位置。", "太短会丢上下文，太长会稀释检索信号。", "分块参数需要在自己的问题集上验证。"], "active": 1},
+          {"title": "关键词与向量是两种信号", "lines": ["BM25 擅长精确词项；向量寻找语义相似。", "两路结果可先按名次融合，再检查相关性。", "语义相似不能直接证明某段内容足以回答问题。"], "active": 2},
+          {"title": "把证据带进回答", "lines": ["为上下文保留文章标识、片段位置和原文入口。", "生成后检查引用是否存在、是否支持对应结论。", "检索不到证据时，应明确表达信息不足。"], "active": 3},
+          {"title": "从最小实验开始", "lines": ["固定同一批问题，对比关键词、向量与混合方案。", "同时记录 Recall、排序位置、延迟与实际回答。", "关联阅读：RAG、DPR、RAPTOR 论文导读。"], "active": 4}
+        ]
+      }
+    },
+    {
+      "key": "evidence",
+      "displayName": "证据工作室 · 演示",
+      "headline": "研究检索失败、长上下文和可核查的回答。",
+      "bio": "LearnTrail 演示策展空间，不代表真实研究机构或论文作者。收录 Self-RAG、CRAG 与长上下文研究的自写导读，关注无答案、证据位置与回答可靠性。",
+      "tone": "clay",
+      "seriesTitle": "让 RAG 学会说：证据还不够",
+      "subtitle": "一分钟知识动画，认识错误召回与拒答边界。",
+      "video": {
+        "label": "EVIDENCE / 02",
+        "nodes": ["问题", "相关性", "位置", "核查", "边界"],
+        "scenes": [
+          {"title": "拿到文档，不代表拿到答案", "lines": ["主题相近的片段，也可能缺少关键条件。", "先确认问题中的对象、时间和约束。", "不要把召回分数当成事实正确率。"], "active": 0},
+          {"title": "检索结果也需要被检查", "lines": ["Self-RAG 研究按需检索与反思信号。", "CRAG 研究检索质量评估和纠正路径。", "论文机制与普通提示词自查不能直接画等号。"], "active": 1},
+          {"title": "上下文越长，未必越可靠", "lines": ["关键证据的位置会影响模型能否利用它。", "可把相同证据分别放在开头、中间和末尾。", "保持问题与内容不变，比较回答变化。"], "active": 2},
+          {"title": "逐条核查回答与引用", "lines": ["引用链接正确，只是最基本的一步。", "还要看原文是否支持回答中的每个关键结论。", "答案不能补出证据没有提供的数字或事实。"], "active": 3},
+          {"title": "把无答案也放进测试集", "lines": ["加入无相关文档、缺关键条件和权限不足的问题。", "既看可回答题，也看应该拒答时有没有编造。", "关联阅读：Self-RAG、CRAG、Lost in the Middle。"], "active": 4}
+        ]
+      }
+    },
+    {
+      "key": "tools",
+      "displayName": "工具调用实验室 · 演示",
+      "headline": "让 Agent 的每一步都能解释、验证和停止。",
+      "bio": "LearnTrail 演示策展空间，不代表真实团队或活跃用户。围绕 ReAct、Toolformer 与 Reflexion 整理论文及原创流程动画，区分模型决策、工具执行和实际业务结果。",
+      "tone": "violet",
+      "seriesTitle": "Agent 工具循环：一次请求如何完成",
+      "subtitle": "一分钟知识动画，拆开工具选择、执行和恢复。",
+      "video": {
+        "label": "TOOLS / 03",
+        "nodes": ["目标", "选择", "执行", "观察", "结束"],
+        "scenes": [
+          {"title": "先明确用户真正要完成什么", "lines": ["例如：找到学习资料，再查看自己的学习进度。", "普通解释问题未必需要工具。", "目标不清时先补全必要条件。"], "active": 0},
+          {"title": "模型提出工具调用", "lines": ["工具清单给出名称、参数结构和用途。", "模型选择工具，不直接获得数据库执行权。", "参数仍需由服务端校验。"], "active": 1},
+          {"title": "执行器负责真实边界", "lines": ["登录身份、资源归属、超时与次数上限由程序约束。", "写操作还需要确认和幂等设计。", "未知结果的非幂等操作不能盲目重试。"], "active": 2},
+          {"title": "观察结果，再决定下一步", "lines": ["工具返回真实数据，或明确的失败信息。", "Agent 根据观察继续、澄清或停止。", "循环上限避免失控调用和无效消耗。"], "active": 3},
+          {"title": "用结果评估 Agent", "lines": ["检查工具是否选对、参数是否正确、任务是否完成。", "不能只凭最终回答听起来流畅就判成功。", "关联阅读：ReAct、Toolformer、Reflexion。"], "active": 4}
+        ]
+      }
+    },
+    {
+      "key": "memory",
+      "displayName": "记忆与评测 · 演示",
+      "headline": "关注跨会话记忆、实验边界与评测偏差。",
+      "bio": "LearnTrail 演示策展空间，不代表真实个人或研究机构。围绕 MemGPT、Generative Agents 与 LLM-as-a-Judge 整理可追溯导读；视频为本站原创字幕动画，不是论文作者演讲。",
+      "tone": "mint",
+      "seriesTitle": "Agent 记忆与评测：保存什么，验证什么",
+      "subtitle": "一分钟知识动画，区分上下文、长期记忆和评分。",
+      "video": {
+        "label": "MEMORY / 04",
+        "nodes": ["会话", "记忆", "隔离", "评测", "复核"],
+        "scenes": [
+          {"title": "聊天历史与长期记忆不同", "lines": ["当前上下文服务于这一次对话。", "跨会话记忆需要明确保存、更新与遗忘规则。", "不要把每句话都永久当作用户事实。"], "active": 0},
+          {"title": "只保存有来源的必要信息", "lines": ["偏好和目标应有来源、时间与确认状态。", "MemGPT 提供了分层上下文管理的研究视角。", "论文中的记忆系统不等同于简单追加聊天记录。"], "active": 1},
+          {"title": "隔离比记得更多更基础", "lines": ["用户甲的记忆不能出现在用户乙的回答里。", "撤销、更新和删除都要能验证。", "从文章或工具读到的指令不能自动变成用户偏好。"], "active": 2},
+          {"title": "模型评分也会有偏差", "lines": ["回答位置、篇幅和评分模型偏好都可能影响结果。", "交换答案顺序，固定评分准则，保留真实费用。", "评分失败应标为未知，不能自动填成满分。"], "active": 3},
+          {"title": "保留人工复核和失败案例", "lines": ["先做固定小样本，再扩大评测范围。", "把模型评分与规则检查、人工核对结合。", "关联阅读：MemGPT、Generative Agents、MT-Bench。"], "active": 4}
+        ]
+      }
+    }
+  ],
+  "papers": [
+    {
+      "key": "rag", "creator": "retrieval", "year": 2020,
+      "title": "RAG：把外部知识接入文本生成",
+      "paperTitle": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "sourceAuthor": "Patrick Lewis 等", "sourceUrl": "https://arxiv.org/abs/2005.11401",
+      "summary": "从参数知识与外部检索的分工出发，理解 RAG 的基本结构，以及知识更新和来源追溯为什么需要单独设计。",
+      "idea": "这项工作把生成模型与外部稠密索引结合，让回答可以使用检索到的段落。论文比较了整段生成共用检索内容，以及生成过程中使用不同段落的两种方式。",
+      "focus": ["区分模型参数中的知识与索引中的知识。", "观察检索与生成如何连接，而不是只看最终示例。", "论文任务上的结果不能直接替代本站业务验收。"],
+      "exercise": "准备十个需要查资料的问题，分别记录不检索与检索后的答案及来源；检查知识更新后是否仍引用旧内容。"
+    },
+    {
+      "key": "dpr", "creator": "retrieval", "year": 2020,
+      "title": "DPR：用双编码器寻找答案段落",
+      "paperTitle": "Dense Passage Retrieval for Open-Domain Question Answering",
+      "sourceAuthor": "Vladimir Karpukhin 等", "sourceUrl": "https://arxiv.org/abs/2004.04906",
+      "summary": "认识问题编码器与段落编码器，理解稠密检索的训练目标，以及为什么仍需保留关键词检索作为对照。",
+      "idea": "DPR 使用双编码器把问题和段落映射到稠密表示，按相似度检索候选段落。论文在开放域问答中研究这种方式与传统稀疏检索的比较。",
+      "focus": ["问题和段落分别编码，服务时可预先建立段落索引。", "检索训练样本与负例选择会影响排序。", "相似度高的候选不一定包含完整答案。"],
+      "exercise": "固定语料和问题，对比 BM25 与向量检索的 Top-K。分别检查专有名词题和语义改写题，保留失败样本。"
+    },
+    {
+      "key": "raptor", "creator": "retrieval", "year": 2024,
+      "title": "RAPTOR：用知识树组织长文档检索",
+      "paperTitle": "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval",
+      "sourceAuthor": "Parth Sarthi 等", "sourceUrl": "https://arxiv.org/abs/2401.18059",
+      "summary": "从短片段走向多层摘要，理解层次检索如何帮助组织长文档，以及新增摘要为什么也需要追溯来源。",
+      "idea": "RAPTOR 对文本片段反复执行嵌入、聚类和摘要，建立包含不同抽象层次的树。查询时从这些层次检索信息，以补充只检索连续短片段的局限。",
+      "focus": ["叶子片段与高层摘要服务于不同粒度的问题。", "摘要生成需要额外成本，也可能遗漏细节。", "维护原始片段与摘要之间的来源关系。"],
+      "exercise": "选择一篇长文章，同时准备事实定位题与跨章节总结题，比较普通分块和层次组织；不要只比较答案长度。"
+    },
+    {
+      "key": "selfrag", "creator": "evidence", "year": 2023,
+      "title": "Self-RAG：何时检索，如何反思证据",
+      "paperTitle": "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection",
+      "sourceAuthor": "Akari Asai 等", "sourceUrl": "https://arxiv.org/abs/2310.11511",
+      "summary": "从固定检索走向按需检索，关注论文中的反思标记与训练机制，并区分它们和普通提示词自查。",
+      "idea": "Self-RAG 通过训练模型生成特定反思标记，控制是否检索，并评价文档和生成内容。它研究的是模型与检索行为的联合机制，不只是回答结束后再问一次是否正确。",
+      "focus": ["先识别何时需要外部证据。", "区分文档相关性、回答支持程度和输出质量。", "复用设计思路时，应明确哪些训练机制尚未实现。"],
+      "exercise": "给问题标注需要检索、不需要检索和信息不足三类，检查固定检索策略在哪些题目上引入了额外噪声。"
+    },
+    {
+      "key": "crag", "creator": "evidence", "year": 2024,
+      "title": "CRAG：当检索结果不可靠时怎么办",
+      "paperTitle": "Corrective Retrieval Augmented Generation",
+      "sourceAuthor": "Shi-Qi Yan 等", "sourceUrl": "https://arxiv.org/abs/2401.15884",
+      "summary": "把检索失败视为显式状态，认识质量评估、纠正检索与证据筛选之间的关系。",
+      "idea": "CRAG 使用轻量检索评估器判断查询相关文档的总体质量，再触发不同检索动作。论文还讨论了网络搜索扩展，以及拆分后重新组织证据以减少无关信息。",
+      "focus": ["不能假定每次 Top-K 都提供有效证据。", "纠正路径需要清晰条件与成本上限。", "外部搜索返回的内容仍需验证来源与访问范围。"],
+      "exercise": "加入与问题主题相近、却缺少答案的干扰文档。记录系统是纠正检索、澄清问题还是直接编出结论。"
+    },
+    {
+      "key": "lostmiddle", "creator": "evidence", "year": 2023,
+      "title": "Lost in the Middle：长上下文里的证据位置",
+      "paperTitle": "Lost in the Middle: How Language Models Use Long Contexts",
+      "sourceAuthor": "Nelson F. Liu 等", "sourceUrl": "https://arxiv.org/abs/2307.03172",
+      "summary": "上下文装得下，不代表信息用得好。通过位置对照实验理解证据排序和上下文压缩的价值。",
+      "idea": "论文在多文档问答和键值检索中改变关键信息的位置，观察模型表现变化。在所测设置中，证据位于中间时可能更难被有效利用。",
+      "focus": ["保持问题和证据内容一致，只改变位置。", "不要把历史模型上的观察当成所有模型的固定规律。", "增大上下文窗口与提高证据利用率是不同目标。"],
+      "exercise": "把同一段正确证据放在输入开头、中间和末尾，在同一模型配置下重复测量，比较正确率和引用情况。"
+    },
+    {
+      "key": "react", "creator": "tools", "year": 2022,
+      "title": "ReAct：让行动与环境反馈形成循环",
+      "paperTitle": "ReAct: Synergizing Reasoning and Acting in Language Models",
+      "sourceAuthor": "Shunyu Yao 等", "sourceUrl": "https://arxiv.org/abs/2210.03629",
+      "summary": "从一次生成走向动作与观察的交替过程，理解工具结果为什么能改变下一步决策。",
+      "idea": "ReAct 将任务推理与动作交替组织，通过与外部知识或环境交互获得反馈。论文在问答、事实核验和交互任务中研究这种协同方式。",
+      "focus": ["行动后的观察必须来自实际环境。", "决策循环需要终止条件和调用预算。", "公开执行轨迹可以记录工具和结果，不必暴露私有推理内容。"],
+      "exercise": "设计一个先查资料再查本人进度的只读任务。分别检查工具选择、参数、结果引用与停止时机，而不只评价最终文案。"
+    },
+    {
+      "key": "toolformer", "creator": "tools", "year": 2023,
+      "title": "Toolformer：模型如何学习使用 API",
+      "paperTitle": "Toolformer: Language Models Can Teach Themselves to Use Tools",
+      "sourceAuthor": "Timo Schick 等", "sourceUrl": "https://arxiv.org/abs/2302.04761",
+      "summary": "区分训练模型学会调用工具，与应用层提供工具 Schema；两者都不能替代执行端的权限校验。",
+      "idea": "Toolformer 通过自监督方式训练模型判断调用哪个 API、何时调用、传递什么参数以及如何利用返回结果。论文使用计算、搜索、翻译等工具研究这种训练思路。",
+      "focus": ["论文包含模型训练机制，不等同于声明几个函数。", "工具调用有选择、参数与结果利用多个环节。", "执行权限仍由应用服务决定。"],
+      "exercise": "为同一工具准备合法、缺字段和越权三类请求。区分模型参数生成错误与服务端执行拒绝，不混成单一失败率。"
+    },
+    {
+      "key": "reflexion", "creator": "tools", "year": 2023,
+      "title": "Reflexion：把失败反馈变成下一次经验",
+      "paperTitle": "Reflexion: Language Agents with Verbal Reinforcement Learning",
+      "sourceAuthor": "Noah Shinn 等", "sourceUrl": "https://arxiv.org/abs/2303.11366",
+      "summary": "不更新模型权重，也能研究反馈与经验记忆如何影响下一轮任务；重点检查反馈是否真实、是否适用。",
+      "idea": "Reflexion 将任务反馈转化为语言反思，并保存在情节记忆中，供后续尝试参考。它利用文本反馈调整行为，而不是直接修改模型权重。",
+      "focus": ["区分外部可验证反馈和模型自己的猜测。", "反思内容可能错误，需要限制适用范围。", "重试应保持任务边界，并记录额外消耗。"],
+      "exercise": "保留一个可重复的失败任务，对比无反馈重试和带已核实反馈重试。记录成功率、尝试次数及是否出现新的副作用。"
+    },
+    {
+      "key": "memgpt", "creator": "memory", "year": 2023,
+      "title": "MemGPT：用分层记忆管理有限上下文",
+      "paperTitle": "MemGPT: Towards LLMs as Operating Systems",
+      "sourceAuthor": "Charles Packer 等", "sourceUrl": "https://arxiv.org/abs/2310.08560",
+      "summary": "借助操作系统的分层存储视角，区分当前上下文、外部记忆和跨会话信息管理。",
+      "idea": "MemGPT 借鉴分层存储，在有限模型上下文与外部记忆之间调度信息，并使用中断管理控制流。论文在长文档分析和跨会话对话中评估这一设计。",
+      "focus": ["当前上下文与长期存储承担不同职责。", "记忆需要来源、更新与遗忘策略。", "保存更多信息并不自动提高准确性，也不代表允许跨用户共享。"],
+      "exercise": "准备偏好新增、纠正、遗忘和跨用户查询四个场景，验证记忆内容与权限，检查旧偏好是否仍被错误使用。"
+    },
+    {
+      "key": "generativeagents", "creator": "memory", "year": 2023,
+      "title": "Generative Agents：记忆、反思与行为规划",
+      "paperTitle": "Generative Agents: Interactive Simulacra of Human Behavior",
+      "sourceAuthor": "Joon Sung Park 等", "sourceUrl": "https://arxiv.org/abs/2304.03442",
+      "summary": "从模拟环境中的角色行为理解观察、记忆检索、反思和规划的组合，同时注意它与真实业务执行的区别。",
+      "idea": "论文把自然语言记录的经历、较高层反思和动态记忆检索结合，用于交互沙盒中的模拟角色。它通过实验分析这些组件对行为表现的影响。",
+      "focus": ["观察记录与抽象反思不是同一种数据。", "检索记忆影响角色接下来的计划。", "模拟角色的可信表现不能作为真实用户活跃或业务可靠性的证据。"],
+      "exercise": "用明确标注的模拟角色分析记忆检索与计划变化；在真实产品中单独统计真实用户行为，避免把模拟事件混入业务指标。"
+    },
+    {
+      "key": "judge", "creator": "memory", "year": 2023,
+      "title": "LLM-as-a-Judge：怎样审视模型给出的分数",
+      "paperTitle": "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena",
+      "sourceAuthor": "Lianmin Zheng 等", "sourceUrl": "https://arxiv.org/abs/2306.05685",
+      "summary": "认识位置、篇幅和模型偏好带来的评分偏差，理解自动评分为什么需要人工校准与明确失败状态。",
+      "idea": "论文研究使用强语言模型评价开放式回答，并分析位置偏差、篇幅偏差和自我偏好等限制。MT-Bench 与 Chatbot Arena 提供了研究模型评价和人类偏好的一组视角。",
+      "focus": ["评分准则和题目证据需要固定。", "交换答案顺序以检查位置偏差。", "模型给出的分数不等同于客观事实或人工共识。"],
+      "exercise": "准备少量人工核对的答案对，让评分模型交换顺序重复评分。保留理由、耗时和失败项，检查分数与人工判断是否一致。"
+    }
+  ]
+}

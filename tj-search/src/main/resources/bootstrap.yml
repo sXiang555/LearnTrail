@@ -1,0 +1,45 @@
+server:
+  port: 8083  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+spring:
+  profiles:
+    active: dev
+  application:
+    name: search-service
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml
+        shared-configs: # 共享配置
+          - data-id: shared-spring.yaml # 共享spring配置
+            refresh: false
+          - data-id: shared-redis.yaml # 共享redis配置
+            refresh: false
+          - data-id: shared-mybatis.yaml # 共享mybatis配置
+            refresh: false
+          - data-id: shared-logs.yaml # 共享日志配置
+            refresh: false
+          - data-id: shared-feign.yaml # 共享feign配置
+            refresh: false
+          - data-id: shared-mq.yaml # 共享MQ配置
+            refresh: false
+tj:
+  swagger:
+    enable: true
+    package-path: com.tianji.search.controller
+    title: 学途 LearnTrail · 课程发现 API
+    description: 课程检索、兴趣分类与内容发现
+    contact-name: LearnTrail Maintainers
+    contact-url: ""
+    contact-email: ""
+    version: v1.0
+    enableResponseWrap: true
+  auth:
+    resource:
+      enable: true
+      includeLoginPaths:
+        - /interests/**
+        - /courses/admin
+  jdbc:
+    database: tj_search

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" width="760" height="380" role="img" aria-labelledby="title desc">
+  <title id="title">一次积分解锁的本地事务</title>
+  <desc id="desc">确认身份和解锁条件后，在同一个数据库事务中扣减积分、记录流水和创建学习权益，统一提交或回滚。</desc>
+  <rect width="760" height="380" rx="20" fill="#f5f7ef"/>
+  <g font-family="system-ui, sans-serif" text-anchor="middle">
+    <text x="380" y="52" font-size="28" font-weight="600" fill="#214a3b">确认身份与解锁条件</text>
+    <path d="M380 70v25m-8-8 8 8 8-8" fill="none" stroke="#80916a" stroke-width="3"/>
+    <rect x="20" y="110" width="720" height="155" rx="14" fill="none" stroke="#9aaa84" stroke-width="2"/>
+    <text x="380" y="145" font-size="24" fill="#62705d">钱包行锁 · 同一个数据库事务</text>
+    <g fill="#214a3b">
+      <rect x="40" y="172" width="200" height="66" rx="10"/>
+      <rect x="280" y="172" width="200" height="66" rx="10"/>
+      <rect x="520" y="172" width="200" height="66" rx="10"/>
+    </g>
+    <g fill="white" font-size="30">
+      <text x="140" y="216">扣减积分</text>
+      <text x="380" y="216">记录流水</text>
+      <text x="620" y="216">创建权益</text>
+    </g>
+    <path d="M245 204h28m-8-8 8 8-8 8M485 204h28m-8-8 8 8-8 8" fill="none" stroke="#80916a" stroke-width="3"/>
+    <path d="M380 278v22m-8-8 8 8 8-8" fill="none" stroke="#80916a" stroke-width="3"/>
+    <text x="380" y="340" font-size="28" font-weight="600" fill="#214a3b">统一提交，或一起回滚</text>
+  </g>
+</svg>

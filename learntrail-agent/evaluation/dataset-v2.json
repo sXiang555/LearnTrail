@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "version": "learntrail-eval-2.0.0",
+  "cases_file": "cases-v2.jsonl",
+  "corpus_file": "corpus-v2.json",
+  "categories": {"rag": 70, "agent": 35, "memory": 15, "skills": 10, "mcp": 10, "hitl": 10},
+  "splits": {"development": 90, "validation": 30, "test": 30},
+  "legacy_dataset": "cases.json",
+  "changelog": [
+    "2.0.0: first 150-case release; preserve eight reviewed v1 RAG cases, add 142 draft cases.",
+    "Freeze seven Java-readable article snapshots and link evidence to article IDs, hashes and Unicode offsets.",
+    "Group article, topic and task-family variants before allocating development/validation/test 90/30/30.",
+    "Separate capability/regression collections and deterministic/Judge/human evaluation. Protocol contract checks do not imply semantic task success."
+  ]
+}

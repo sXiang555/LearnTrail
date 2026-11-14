@@ -1,0 +1,16 @@
+{
+  "schema_version": 4,
+  "version": "learntrail-eval-4.0.0",
+  "cases_file": "cases-v4.jsonl",
+  "corpus_file": "corpus-v2.json",
+  "categories": {"rag": 70, "agent": 35, "memory": 15, "skills": 10, "mcp": 10, "hitl": 10},
+  "splits": {"development": 90, "validation": 30, "test": 30},
+  "legacy_dataset": "dataset-v3.json",
+  "changelog": [
+    "4.0.0: preserve v1-v3 and historical reports; separate ready data from system evaluation results.",
+    "65 RAG QA cases: 94 literal source facts, atomic evidence bindings, explicit absence scopes, corrected task boundaries; no mandatory human evaluator.",
+    "85 functional scenarios retain their own inputs and checks; one latest-learning contract remains blocked. Controlled model fixtures do not measure model decision quality.",
+    "Report source validation, retrieval performance, generation and semantic grading separately. Never infer task success from annotation membership.",
+    "Persist complete ranked results and production retrieval stages, generated answers and automatic judge reasons when those stages execute. Keep failures visible."
+  ]
+}
