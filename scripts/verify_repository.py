@@ -85,6 +85,12 @@ def check(root):
         except UnicodeDecodeError:
             continue
         text_files[path] = text
+        if any(part.startswith("tj-") for part in relative.parts):
+            issues.append(str(relative) + ": legacy module path")
+        if path.suffix == ".java" and re.search(r"(?m)^\s*(?:package|import)\s+(?:static\s+)?com\.tianji\.", text):
+            issues.append(str(relative) + ": legacy Java package or import")
+        if "src/main/resources" in relative.as_posix() and "com.tianji" in text:
+            issues.append(str(relative) + ": legacy resource class reference")
         for line, key in credential_issues(text, path.suffix):
             issues.append(str(relative) + ":" + str(line) + ": literal credential: " + key)
         if path.name == "bootstrap.yml" and re.search(r"^\s*title:.*天机", text, re.M):
@@ -98,10 +104,12 @@ def check(root):
             issues.append(str(path.relative_to(root)) + ": invalid POM XML")
             continue
         name = model.findtext("m:name", default="", namespaces=NS)
+        if model.findtext("m:artifactId", default="", namespaces=NS).startswith("tj-"):
+            issues.append(str(path.relative_to(root)) + ": legacy Maven artifact")
         if not name.startswith("LearnTrail :: "):
             issues.append(str(path.relative_to(root)) + ": missing LearnTrail module name")
         parent = model.find("m:parent", NS)
-        if parent is not None and parent.findtext("m:groupId", namespaces=NS) == "com.tianji":
+        if parent is not None and parent.findtext("m:groupId", namespaces=NS) == "com.learntrail":
             relative = parent.findtext("m:relativePath", default="../pom.xml", namespaces=NS)
             local_parent = (path.parent / relative).resolve()
             if not local_parent.is_file():
@@ -136,8 +144,10 @@ def check(root):
                 issues.append(str(path.relative_to(root)) + ": broken relative link " + destination)
 
     root_model = ET.parse(root / "pom.xml").getroot()
-    if root_model.findtext("m:artifactId", namespaces=NS) != "learntrail-parent":
+    if root_model.findtext("m:artifactId", namespaces=NS) != "lt-parent":
         issues.append("pom.xml: unexpected parent artifact")
+    if root_model.findtext("m:groupId", namespaces=NS) != "com.learntrail":
+        issues.append("pom.xml: unexpected groupId")
     return issues, len(files), len(poms)
 
 

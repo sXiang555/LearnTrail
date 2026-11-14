@@ -1,0 +1,46 @@
+server:
+  port: 8093  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+spring:
+  profiles:
+    active: dev
+  application:
+    name: lt-data
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml
+        shared-configs: # 共享配置
+          - data-id: shared-spring.yaml # 共享spring配置
+            refresh: false
+          - data-id: shared-redis.yaml # 共享redis配置
+            refresh: false
+          - data-id: shared-mybatis.yaml # 共享mybatis配置
+            refresh: false
+          - data-id: shared-logs.yaml # 共享日志配置
+            refresh: false
+          - data-id: shared-feign.yaml # 共享feign配置
+            refresh: false
+          - data-id: shared-mq.yaml # 共享mq配置
+            refresh: false
+          - data-id: shared-xxljob.yaml # 共享job配置
+            refresh: false
+tj:
+  mq:
+    error-service-name: data-service
+  swagger:
+    enable: true
+    enableResponseWrap: true
+    package-path: com.learntrail.data.controller
+    title: 学途 LearnTrail · 运营分析 API
+    description: 运营看板与业务数据统计
+    contact-name: LearnTrail Maintainers
+    contact-url: ""
+    contact-email: ""
+    version: v1.0
+  jdbc:
+    database: tj_data
+  auth:
+    resource:
+      enable: true

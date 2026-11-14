@@ -1,0 +1,2 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+  com.learntrail.authsdk.gateway.config.AuthAutoConfiguration

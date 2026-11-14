@@ -30,4 +30,4 @@ python3 scripts/prepare_github.py --dry-run
 python3 scripts/prepare_github.py --init-git
 ```
 
-默认从已提交的 `HEAD` 生成 `.local/github/LearnTrail`，可用 `--ref` 指定版本；保留完整构建模块、测试、迁移与公开文档，排除开发交接资料和旧Git历史。不修改工作区、不覆盖已有目录、不自动提交或推送。工程来源与第三方信息见[NOTICE](NOTICE.md)。
+默认从已提交的 `HEAD` 生成 `.local/github/LearnTrail`，可用 `--ref` 指定版本；保留完整构建模块、测试、迁移与公开文档，排除开发交接资料和旧Git历史。不修改工作区、不覆盖已有目录、不自动提交或推送。

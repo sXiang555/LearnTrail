@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.learntrail.course.mapper.StudioMapper">
+    <sql id="seriesColumns">
+        s.id,s.course_id,s.creator_id,s.slug,s.title,s.subtitle,s.description,s.topic,
+        s.cover_tone,s.status,s.featured,s.preview_section_id,s.preview_minutes,c.price,c.free,
+        s.liked_times,s.view_times,
+        s.blocked,(s.status='published' AND c.status=2 AND s.blocked=0) AS available,
+        (c.id IS NOT NULL) AS previously_published,(cr.owner_user_id=#{userId}) AS creator_owned,
+        CASE WHEN c.free=1 THEN 0 ELSE s.unlock_points END AS unlock_points,
+        cr.display_name AS creator_name,cr.slug AS creator_slug,
+        cr.initials AS creator_initials,cr.avatar_color AS creator_color,
+        (SELECT COUNT(*) FROM course_catalogue e WHERE e.course_id=c.id AND e.type=2 AND e.media_id&gt;0 AND e.deleted=0) AS episode_count,
+        (SELECT COALESCE(SUM(e.media_duration),0) FROM course_catalogue e WHERE e.course_id=c.id AND e.type=2 AND e.media_id&gt;0 AND e.deleted=0) AS duration,
+        EXISTS(SELECT 1 FROM learntrail_watchlist w WHERE w.series_id=s.id AND w.user_id=#{userId}) AS saved
+    </sql>
+    <sql id="formalJoin">
+        FROM learntrail_series s JOIN course c ON c.id=s.course_id
+        JOIN learntrail_creator cr ON cr.id=s.creator_id
+        WHERE c.deleted=0
+    </sql>
+    <sql id="seriesJoin">
+        <include refid="formalJoin"/> AND c.status=2 AND s.blocked=0
+    </sql>
+    <select id="series" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT <include refid="seriesColumns"/> <include refid="seriesJoin"/>
+        AND (s.status='published' OR (#{includeDraft}=1 AND cr.owner_user_id=#{userId}))
+        <if test="q != null and q != ''">
+            AND (s.title LIKE CONCAT('%',#{q},'%') OR s.subtitle LIKE CONCAT('%',#{q},'%') OR cr.display_name LIKE CONCAT('%',#{q},'%'))
+        </if>
+        <if test="topic != null and topic != ''">AND s.topic=#{topic}</if>
+        <if test="creator != null and creator != ''">AND cr.slug=#{creator}</if>
+        <if test="saved">AND EXISTS(SELECT 1 FROM learntrail_watchlist w WHERE w.series_id=s.id AND w.user_id=#{userId})</if>
+        ORDER BY s.featured DESC,s.sort_order,s.id LIMIT 100
+    </select>
+    <sql id="pageFilter">
+        FROM learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        LEFT JOIN course c ON c.id=s.course_id AND c.deleted=0
+        WHERE
+        <choose>
+            <when test="query.scope == 'operations'">1=1</when>
+            <otherwise>c.id IS NOT NULL</otherwise>
+        </choose>
+        <choose>
+            <when test="query.scope == 'owned'">
+                <choose>
+                    <when test="courseIds != null and courseIds.size() > 0">
+                        AND c.id IN <foreach collection="courseIds" item="courseId" open="(" separator="," close=")">#{courseId}</foreach>
+                    </when>
+                    <otherwise>AND 1=0</otherwise>
+                </choose>
+            </when>
+            <when test="query.scope == 'saved'">
+                AND EXISTS(SELECT 1 FROM learntrail_watchlist w WHERE w.series_id=s.id AND w.user_id=#{userId})
+            </when>
+            <when test="query.scope == 'operations'"/>
+            <otherwise>AND c.status=2 AND s.status='published' AND s.blocked=0</otherwise>
+        </choose>
+        <if test="query.q != null and query.q != ''">
+            AND (s.title LIKE CONCAT('%',#{query.q},'%') OR s.subtitle LIKE CONCAT('%',#{query.q},'%') OR cr.display_name LIKE CONCAT('%',#{query.q},'%'))
+        </if>
+        <if test="query.topic != null and query.topic != ''">AND s.topic=#{query.topic}</if>
+        <if test="query.creator != null and query.creator != ''">AND cr.slug=#{query.creator}</if>
+    </sql>
+    <select id="countPage" resultType="long">SELECT COUNT(*) <include refid="pageFilter"/></select>
+    <select id="seriesPage" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT <include refid="seriesColumns"/> <include refid="pageFilter"/>
+        ORDER BY
+        <choose>
+            <when test="query.sort == 'likes'">s.liked_times DESC,s.id DESC</when>
+            <when test="query.sort == 'views'">s.view_times DESC,s.id DESC</when>
+            <when test="query.sort == 'price'">unlock_points ASC,s.id DESC</when>
+            <when test="query.sort == 'duration'">duration DESC,s.id DESC</when>
+            <when test="query.sort == 'newest'">s.updated_at DESC,s.id DESC</when>
+            <otherwise>s.featured DESC,s.sort_order,s.id</otherwise>
+        </choose>
+        LIMIT #{query.pageSize} OFFSET #{query.offset}
+    </select>
+    <select id="topics" resultType="string">
+        SELECT DISTINCT s.topic <include refid="seriesJoin"/> AND s.status='published' ORDER BY s.topic
+    </select>
+    <select id="discussionPolicy" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT c.id AS course_id,c.free,COALESCE(s.blocked,0) AS blocked,
+            (c.status=2 AND (s.id IS NULL OR (s.status='published' AND s.blocked=0))) AS available,
+            (cr.owner_user_id=#{userId}) AS creator_owned
+        FROM course c LEFT JOIN learntrail_series s ON s.course_id=c.id
+        LEFT JOIN learntrail_creator cr ON cr.id=s.creator_id
+        WHERE c.id=#{courseId} AND c.deleted=0
+    </select>
+    <select id="find" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT <include refid="seriesColumns"/> <include refid="formalJoin"/>
+        <choose><when test="id != null">AND s.id=#{id}</when><otherwise>AND s.slug=#{slug}</otherwise></choose>
+    </select>
+    <select id="ownedSeries" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT <include refid="seriesColumns"/> <include refid="formalJoin"/>
+        AND c.id IN <foreach collection="courseIds" item="courseId" open="(" separator="," close=")">#{courseId}</foreach>
+        ORDER BY s.updated_at DESC,s.id DESC
+    </select>
+    <select id="findUnlockPoints" resultType="java.lang.Integer">
+        SELECT s.unlock_points <include refid="seriesJoin"/>
+        AND s.course_id=#{courseId} AND s.status='published' AND c.free=0 AND s.unlock_points&gt;0
+    </select>
+    <sql id="creatorColumns">
+        cr.*,
+        (SELECT COUNT(*) FROM learntrail_series s JOIN course c ON c.id=s.course_id WHERE s.creator_id=cr.id AND s.status='published' AND s.blocked=0 AND c.status=2 AND c.deleted=0) AS series_count,
+        (SELECT COUNT(*) FROM learntrail_creator_follow f WHERE f.creator_id=cr.id) AS follower_count,
+        EXISTS(SELECT 1 FROM learntrail_creator_follow f WHERE f.creator_id=cr.id AND f.user_id=#{userId}) AS following
+    </sql>
+    <select id="creators" resultType="com.learntrail.course.domain.vo.StudioView$Creator">
+        SELECT <include refid="creatorColumns"/> FROM learntrail_creator cr ORDER BY cr.id LIMIT 100
+    </select>
+    <sql id="rankedCreators">
+        SELECT <include refid="creatorColumns"/>,
+        <choose>
+            <when test="articleCounts != null and !articleCounts.isEmpty()">
+                CASE cr.owner_user_id
+                <foreach collection="articleCounts" index="author" item="count">WHEN #{author} THEN #{count}</foreach>
+                ELSE 0 END
+            </when>
+            <otherwise>0</otherwise>
+        </choose> AS article_count
+        FROM learntrail_creator cr
+        <if test="q != null and q != ''">WHERE cr.display_name LIKE CONCAT('%',#{q},'%') OR cr.headline LIKE CONCAT('%',#{q},'%')</if>
+    </sql>
+    <select id="countCreators" resultType="long">
+        SELECT COUNT(*) FROM (<include refid="rankedCreators"/>) ranked WHERE series_count + article_count &gt; 0
+    </select>
+    <select id="creatorsPage" resultType="com.learntrail.course.domain.vo.StudioView$Creator">
+        SELECT * FROM (<include refid="rankedCreators"/>) ranked WHERE series_count + article_count &gt; 0
+        ORDER BY follower_count DESC,(series_count + article_count) DESC,ranked.id ASC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+    <select id="creator" resultType="com.learntrail.course.domain.vo.StudioView$Creator">
+        SELECT <include refid="creatorColumns"/> FROM learntrail_creator cr WHERE cr.slug=#{slug}
+    </select>
+    <select id="owner" resultType="com.learntrail.course.domain.vo.StudioView$Creator">
+        SELECT <include refid="creatorColumns"/> FROM learntrail_creator cr WHERE cr.owner_user_id=#{userId}
+    </select>
+    <select id="followers" resultType="com.learntrail.course.domain.vo.StudioView$Follower">
+        SELECT user_id,created_at AS followed_at FROM learntrail_creator_follow WHERE creator_id=#{creatorId}
+        ORDER BY created_at DESC,user_id DESC LIMIT #{size} OFFSET #{offset}
+    </select>
+    <insert id="insertCreator">
+        INSERT INTO learntrail_creator (id,owner_user_id,slug,display_name,headline,bio,initials)
+        VALUES (#{id},#{userId},CONCAT('creator-',#{id}),#{profile.displayName},#{profile.headline},#{profile.bio},#{initials})
+        ON DUPLICATE KEY UPDATE id=learntrail_creator.id
+    </insert>
+    <insert id="insertDraft">
+        INSERT INTO learntrail_series (id,course_id,creator_id,slug,title,subtitle,description,topic,cover_tone,status,unlock_points)
+        VALUES (#{id},#{courseId},#{creatorId},CONCAT('series-',#{id}),#{edit.title},#{edit.subtitle},
+                #{edit.description},#{edit.topic},#{edit.coverTone},'draft',#{unlockPoints})
+    </insert>
+    <select id="drafts" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT s.id,s.course_id,s.creator_id,s.slug,s.title,s.subtitle,s.description,s.topic,
+            s.cover_tone,s.status,d.price,d.free,d.third_cate_id AS category_id,
+            CASE WHEN d.free=1 THEN 0 ELSE s.unlock_points END AS unlock_points,
+            (SELECT COUNT(*) FROM course_catalogue_draft e
+             WHERE e.course_id=d.id AND e.type=2 AND e.deleted=0) AS episode_count
+        FROM learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        JOIN course_draft d ON d.id=s.course_id AND d.deleted=0
+        WHERE cr.owner_user_id=#{userId} AND s.status='draft'
+        ORDER BY s.updated_at DESC,s.id DESC
+    </select>
+    <select id="lockSeries" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT s.id,s.course_id,s.creator_id,s.slug,s.title,s.subtitle,s.description,s.topic,
+            s.cover_tone,s.status,s.blocked,s.draft_payload,
+            (c.id IS NOT NULL) AS previously_published,(cr.owner_user_id=#{userId}) AS creator_owned,
+            (s.status='published' AND c.status=2 AND s.blocked=0) AS available,
+            CASE WHEN s.status='draft' THEN s.draft_preview_section_id ELSE s.preview_section_id END AS preview_section_id,
+            CASE WHEN s.status='draft' THEN s.draft_preview_minutes ELSE s.preview_minutes END AS preview_minutes,
+            COALESCE(d.price,c.price) AS price,COALESCE(d.free,c.free) AS free,
+            COALESCE(d.third_cate_id,c.third_cate_id) AS category_id,
+            CASE WHEN COALESCE(d.free,c.free)=1 THEN 0 ELSE s.unlock_points END AS unlock_points
+        FROM learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        LEFT JOIN course_draft d ON d.id=s.course_id AND d.deleted=0
+        LEFT JOIN course c ON c.id=s.course_id AND c.deleted=0
+        WHERE (#{userId} IS NULL OR cr.owner_user_id=#{userId}) AND s.id=#{id}
+        FOR UPDATE
+    </select>
+    <select id="workspaceSeries" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT s.id,s.course_id,s.creator_id,s.slug,s.title,s.subtitle,s.description,s.topic,s.cover_tone,
+            s.status,s.blocked,s.draft_payload,(c.id IS NOT NULL) AS previously_published,1 AS creator_owned,
+            (s.status='published' AND c.status=2 AND s.blocked=0) AS available,
+            COALESCE(d.price,c.price) AS price,COALESCE(d.free,c.free) AS free,
+            COALESCE(d.third_cate_id,c.third_cate_id) AS category_id,
+            CASE WHEN COALESCE(d.free,c.free)=1 THEN 0 ELSE s.unlock_points END AS unlock_points,
+            CASE WHEN s.status='draft' THEN
+                (SELECT COUNT(*) FROM course_catalogue_draft e WHERE e.course_id=s.course_id AND e.type=2 AND e.deleted=0)
+            ELSE (SELECT COUNT(*) FROM course_catalogue e WHERE e.course_id=s.course_id AND e.type=2 AND e.deleted=0) END AS episode_count
+        FROM learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        LEFT JOIN course_draft d ON d.id=s.course_id AND d.deleted=0
+        LEFT JOIN course c ON c.id=s.course_id AND c.deleted=0
+        WHERE cr.owner_user_id=#{userId}
+        ORDER BY s.updated_at DESC,s.id DESC
+    </select>
+    <select id="draftChapter" resultType="java.lang.Long">
+        SELECT id FROM course_catalogue_draft WHERE course_id=#{courseId} AND type=1 AND deleted=0 ORDER BY c_index,id LIMIT 1
+    </select>
+    <select id="boundMediaIds" resultType="java.lang.Long">
+        SELECT e.media_id FROM course_catalogue_draft e JOIN learntrail_series s ON s.course_id=e.course_id
+        JOIN learntrail_creator cr ON cr.id=s.creator_id
+        WHERE e.course_id=#{courseId} AND cr.owner_user_id=#{userId} AND e.deleted=0 AND e.media_id&gt;0
+        UNION
+        SELECT e.media_id FROM course_catalogue e JOIN learntrail_series s ON s.course_id=e.course_id
+        JOIN learntrail_creator cr ON cr.id=s.creator_id
+        WHERE e.course_id=#{courseId} AND cr.owner_user_id=#{userId} AND e.deleted=0 AND e.media_id&gt;0
+    </select>
+    <select id="draftEpisodes" resultType="com.learntrail.course.domain.vo.StudioView$DraftEpisode">
+        SELECT id,media_id,name AS title,video_name AS filename,media_duration AS duration
+        FROM course_catalogue_draft
+        WHERE course_id=#{courseId} AND type=2 AND deleted=0
+        ORDER BY c_index,id
+    </select>
+    <update id="updatePreview">
+        UPDATE learntrail_series SET draft_preview_section_id=#{sectionId,jdbcType=BIGINT},draft_preview_minutes=#{minutes}
+        WHERE id=#{id} AND status='draft'
+    </update>
+    <update id="publishDraft">
+        UPDATE learntrail_series SET status='published',title=#{edit.title},subtitle=#{edit.subtitle},
+            description=#{edit.description},topic=#{edit.topic},cover_tone=#{edit.coverTone},unlock_points=#{unlockPoints},
+            preview_section_id=draft_preview_section_id,preview_minutes=draft_preview_minutes,draft_payload=NULL
+        WHERE id=#{id} AND status='draft' AND blocked=0
+    </update>
+    <update id="updateDraftPayload">
+        UPDATE learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        SET s.draft_payload=#{payload},s.updated_at=NOW()
+        WHERE s.id=#{id} AND cr.owner_user_id=#{userId} AND s.status='draft' AND s.blocked=0
+    </update>
+    <update id="beginRevision">
+        UPDATE learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        SET s.status='draft',s.draft_payload=#{payload},s.draft_preview_section_id=s.preview_section_id,
+            s.draft_preview_minutes=COALESCE(s.preview_minutes,3)
+        WHERE s.id=#{id} AND cr.owner_user_id=#{userId} AND s.status IN ('published','unlisted','archived') AND s.blocked=0
+    </update>
+    <update id="changeState">
+        UPDATE learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        SET s.status=#{state} WHERE s.id=#{id} AND cr.owner_user_id=#{userId} AND s.blocked=0
+    </update>
+    <update id="setBlocked">UPDATE learntrail_series SET blocked=#{blocked} WHERE id=#{id}</update>
+    <select id="episodes" resultType="com.learntrail.course.domain.vo.StudioView$Episode">
+        SELECT e.id,e.name AS title,e.media_duration AS duration,e.c_index AS position,
+            (e.trailer=1 OR e.id=s.preview_section_id OR c.free=1) AS preview
+        FROM course_catalogue e JOIN course c ON c.id=e.course_id
+        JOIN learntrail_series s ON s.course_id=c.id
+        LEFT JOIN course_catalogue chapter ON chapter.id=e.parent_catalogue_id
+        WHERE e.course_id=#{courseId} AND e.deleted=0 AND e.type=2 AND e.media_id&gt;0
+        ORDER BY COALESCE(chapter.c_index,0),e.c_index,e.id
+    </select>
+    <select id="accessPolicy" resultType="com.learntrail.course.domain.vo.StudioView$Series">
+        SELECT c.free,s.preview_section_id,s.preview_minutes,s.blocked,
+            (s.status='published' AND c.status=2 AND s.blocked=0) AS available,
+            (cr.owner_user_id=#{userId}) AS creator_owned
+        FROM course_catalogue e JOIN learntrail_series s ON s.course_id=e.course_id
+        JOIN course c ON c.id=e.course_id
+        JOIN learntrail_creator cr ON cr.id=s.creator_id
+        WHERE e.id=#{sectionId} AND e.type=2 AND e.deleted=0 AND c.deleted=0
+    </select>
+    <insert id="save">INSERT IGNORE INTO learntrail_watchlist(user_id,series_id) VALUES(#{userId},#{seriesId})</insert>
+    <delete id="unsave">DELETE FROM learntrail_watchlist WHERE user_id=#{userId} AND series_id=#{seriesId}</delete>
+    <insert id="follow">INSERT IGNORE INTO learntrail_creator_follow(user_id,creator_id) VALUES(#{userId},#{creatorId})</insert>
+    <delete id="unfollow">DELETE FROM learntrail_creator_follow WHERE user_id=#{userId} AND creator_id=#{creatorId}</delete>
+    <update id="updateSeries">
+        UPDATE learntrail_series s JOIN learntrail_creator cr ON cr.id=s.creator_id
+        SET s.title=#{edit.title},s.subtitle=#{edit.subtitle},s.description=#{edit.description},
+            s.topic=#{edit.topic},s.cover_tone=#{edit.coverTone}
+            <if test="unlockPoints != null">,s.unlock_points=#{unlockPoints}</if>
+        WHERE s.id=#{id} AND cr.owner_user_id=#{userId}
+    </update>
+    <update id="updateCreator">
+        UPDATE learntrail_creator SET display_name=#{edit.displayName},headline=#{edit.headline},bio=#{edit.bio}
+        WHERE owner_user_id=#{userId}
+    </update>
+</mapper>

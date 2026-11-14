@@ -105,7 +105,7 @@ LearnTrail/
 │   ├── backend-architecture.md  Java 后端架构与源码入口
 │   ├── agent-architecture.md    Agent 工作流与数据流
 │   └── quickstart.md            环境、配置与启动
-├── tj-gateway/ tj-auth/ ...      Java 微服务
+├── lt-gateway/ lt-auth/ ...      Java 微服务
 ├── frontend/learntrail-web/      Vue 3 统一前端
 ├── learntrail-agent/
 │   ├── README.md                AI 专属介绍
@@ -143,4 +143,4 @@ npm run dev
 
 平台已打通内容、积分交易、学习记录和 AI 助手。后续围绕检索精排、无答案判断、业务工具扩展、自动化交付与运行监控继续演进。
 
-[参与开发](CONTRIBUTING.md) · [工程来源与第三方说明](NOTICE.md)
+[参与开发](CONTRIBUTING.md)

@@ -1,0 +1,51 @@
+server:
+  port: 8087  #端口
+  tomcat:
+    uri-encoding: UTF-8   #服务编码
+  error:
+    include-message: always #返回的响应体带上message
+spring:
+  profiles:
+    active: dev
+  application:
+    name: lt-pay
+  cloud:
+    nacos:
+      config:
+        file-extension: yaml
+        shared-configs: # 共享配置
+          - dataId: shared-spring.yaml # 共享spring配置
+          - dataId: shared-redis.yaml # 共享redis配置
+          - dataId: shared-mybatis.yaml # 共享mybatis配置
+          - dataId: shared-logs.yaml # 共享日志配置
+          - dataId: shared-feign.yaml # 共享feign配置
+          - dataId: shared-mq.yaml # 共享mq配置
+          - dataId: shared-xxljob.yaml # 共享mq配置
+tj:
+  mq:
+    error-service-name: pay-service
+  swagger:
+    enable: true
+    enableResponseWrap: true
+    package-path: com.learntrail.pay.controller
+    title: 学途 LearnTrail · 支付与退款 API
+    description: 支付渠道申请、结果回调与退款处理
+    contact-name: LearnTrail Maintainers
+    contact-url: ""
+    contact-email: ""
+    version: v1.0
+  jdbc:
+    database: tj_pay
+  pay:
+    notifyHost: "${LEARNTRAIL_PAY_NOTIFY_HOST}"
+    ali:
+      gatewayHost: "${LEARNTRAIL_ALIPAY_GATEWAY_HOST}"
+      appId: "${LEARNTRAIL_ALIPAY_APP_ID}"
+      merchantPrivateKey: "${LEARNTRAIL_ALIPAY_PRIVATE_KEY}"
+      publicKey: "${LEARNTRAIL_ALIPAY_PUBLIC_KEY}"
+    wx:
+      appId: "${LEARNTRAIL_WECHAT_APP_ID}"
+      mchId: "${LEARNTRAIL_WECHAT_MERCHANT_ID}"
+      mchSerialNo: "${LEARNTRAIL_WECHAT_MERCHANT_SERIAL}"
+      privateKey: "${LEARNTRAIL_WECHAT_PRIVATE_KEY}"
+      apiV3Key: "${LEARNTRAIL_WECHAT_API_V3_KEY}"

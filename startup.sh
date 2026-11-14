@@ -22,7 +22,7 @@ Usage: sh startup.sh -n ARTIFACT -d MODULE [-c CONTAINER] [-p PORT]
                      [-k KEYSTORE_FILE] [-w NETWORK] [--dry-run]
 
 Example:
-  sh startup.sh -n tj-learning -d tj-learning -p 8090 -e .env.local --dry-run
+  sh startup.sh -n lt-learning -d lt-learning -p 8090 -e .env.local --dry-run
 
 Requires a packaged module JAR and prepared external services.
 Existing containers are never removed automatically.
@@ -84,7 +84,7 @@ if [ "$DEBUG_PORT" != "0" ]; then
     JAVA_OPTS="$JAVA_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
 fi
 
-CONTAINER_NAME="${CONTAINER_NAME:-learntrail-${PROJECT_NAME#tj-}}"
+CONTAINER_NAME="${CONTAINER_NAME:-learntrail-${PROJECT_NAME#lt-}}"
 case "$CONTAINER_NAME" in
     *[!a-zA-Z0-9_.-]*|-*|.*|_*) fail "Invalid container name" ;;
 esac

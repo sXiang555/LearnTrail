@@ -18,15 +18,15 @@ class PublicPathTest(unittest.TestCase):
         for name in [".git/config", ".local/videos/private.mp4", ".env.local", "AGENTS.md",
                      "docs/platform-plan.md", "docs/deployment-20261113.md", "templates/entity.java.ftl",
                      "learntrail-agent/AGENTS.md", "learntrail-agent/.env", "learntrail-agent/.venv/private",
-                     "tj-auth/src/auth.jks", "tj-user/target/app.jar", "frontend/learntrail-web/node_modules/a.js",
+                     "lt-auth/src/auth.jks", "lt-user/target/app.jar", "frontend/learntrail-web/node_modules/a.js",
                      "../README.md", "/README.md"]:
             with self.subTest(name=name):
                 self.assertFalse(release.public_path(name))
 
     def test_public_components_and_regression_resources_are_preserved(self):
-        for name in ["README.md", "NOTICE.md", ".env.example", "docs/backend-architecture.md",
+        for name in ["README.md", ".env.example", "docs/backend-architecture.md",
                      "learntrail-agent/.env.example", "learntrail-agent/evaluation/cases-v3.jsonl",
-                     "tj-learning/src/main/java/Service.java", "database/migrations/V001.sql",
+                     "lt-learning/src/main/java/Service.java", "database/migrations/V001.sql",
                      "frontend/learntrail-web/package-lock.json", "deploy/nginx/learntrail.conf"]:
             with self.subTest(name=name):
                 self.assertTrue(release.public_path(name))
@@ -82,7 +82,7 @@ class ExportTest(unittest.TestCase):
         self.assertFalse((self.destination / "learntrail-agent/unfinished.py").exists())
 
     def test_module_closure_is_checked_before_export(self):
-        self.write("pom.xml", '<project xmlns="http://maven.apache.org/POM/4.0.0"><modules><module>tj-missing</module></modules></project>')
+        self.write("pom.xml", '<project xmlns="http://maven.apache.org/POM/4.0.0"><modules><module>lt-missing</module></modules></project>')
         with self.assertRaisesRegex(ValueError, "Missing Maven module"):
             release.export(self.root, self.destination)
         self.assertFalse(self.destination.exists())
@@ -90,7 +90,7 @@ class ExportTest(unittest.TestCase):
     def test_public_symlink_cannot_copy_external_data(self):
         outside = Path(self.temp.name) / "private.txt"
         outside.write_text("private")
-        link = self.root / "tj-user/src/private.txt"
+        link = self.root / "lt-user/src/private.txt"
         link.parent.mkdir(parents=True)
         link.symlink_to(outside)
         with self.assertRaisesRegex(ValueError, "symlinks"):

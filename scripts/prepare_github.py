@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_FILES = {
-    "README.md", "NOTICE.md", "CONTRIBUTING.md", "pom.xml", "Dockerfile",
+    "README.md", "CONTRIBUTING.md", "pom.xml", "Dockerfile",
     "startup.sh", ".gitignore", ".dockerignore", ".env.example",
 }
 PUBLIC_DOCS = {
@@ -45,7 +45,7 @@ def public_path(name: str) -> bool:
     if name in ROOT_FILES or name in PUBLIC_DOCS or name in PUBLIC_SCRIPTS:
         return True
     return (
-        path.parts[0].startswith("tj-")
+        path.parts[0].startswith("lt-")
         or name.startswith("frontend/learntrail-web/")
         or name.startswith("learntrail-agent/")
         or name.startswith(".github/")

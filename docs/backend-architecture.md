@@ -10,12 +10,12 @@ Java11、Spring Boot2.7、Spring Cloud2021、Spring Cloud Alibaba、MyBatis-Plus
 
 ```mermaid
 flowchart TB
-    Web[Vue / Python Agent] --> Gateway[tj-gateway]
-    Gateway --> Auth[tj-auth / tj-user]
-    Gateway --> Content[tj-course / tj-media]
-    Gateway --> Learning[tj-learning]
-    Gateway --> Commerce[tj-trade / tj-promotion]
-    Gateway --> Remark[tj-remark]
+    Web[Vue / Python Agent] --> Gateway[lt-gateway]
+    Gateway --> Auth[lt-auth / lt-user]
+    Gateway --> Content[lt-course / lt-media]
+    Gateway --> Learning[lt-learning]
+    Gateway --> Commerce[lt-trade / lt-promotion]
+    Gateway --> Remark[lt-remark]
     Nacos[Nacos · 注册与共享配置] -.-> Gateway & Auth & Content & Learning & Commerce & Remark
     Content & Learning & Commerce --> DB[(MySQL)]
     Remark & Learning --> Cache[(Redis)]
@@ -25,16 +25,18 @@ flowchart TB
 
 | 领域 | 模块 | 主要职责 |
 | --- | --- | --- |
-| 统一入口 | `tj-gateway` | 服务路由、JWT 鉴权、请求身份传递 |
-| 身份与用户 | `tj-auth`、`tj-user` | 登录与刷新、角色、账号状态、个人资料 |
-| 内容与媒资 | `tj-course`、`tj-media` | 创作者、专栏、草稿与发布、目录、上传与播放授权 |
-| 学习 | `tj-learning` | 文章、课表、小节进度、问答、有效学习与积分钱包 |
-| 交易 | `tj-trade`、`tj-promotion` | 积分订单、计价、单券预留／核销、结算恢复 |
-| 互动 | `tj-remark` | 点赞关系、浏览／播放去重、版本化聚合 |
-| 检索与支撑 | `tj-search`、`tj-message`、`tj-data`、`tj-exam`、`tj-pay` | 搜索、通知、统计、练习与渠道适配 |
-| 基础组件 | `tj-common`、`tj-api` | 通用组件、Feign Client、DTO 与服务契约 |
+| 统一入口 | `lt-gateway` | 服务路由、JWT 鉴权、请求身份传递 |
+| 身份与用户 | `lt-auth`、`lt-user` | 登录与刷新、角色、账号状态、个人资料 |
+| 内容与媒资 | `lt-course`、`lt-media` | 创作者、专栏、草稿与发布、目录、上传与播放授权 |
+| 学习 | `lt-learning` | 文章、课表、小节进度、问答、有效学习与积分钱包 |
+| 交易 | `lt-trade`、`lt-promotion` | 积分订单、计价、单券预留／核销、结算恢复 |
+| 互动 | `lt-remark` | 点赞关系、浏览／播放去重、版本化聚合 |
+| 检索与支撑 | `lt-search`、`lt-message`、`lt-data`、`lt-exam`、`lt-pay` | 搜索、通知、统计、练习与渠道适配 |
+| 基础组件 | `lt-common`、`lt-api` | 通用组件、Feign Client、DTO 与服务契约 |
 
-目录、包名和服务注册名保持稳定，平台通过展示名称、产品领域和统一入口组织业务。
+模块目录与 Maven artifactId 统一采用 `lt-*`，Java groupId 和包根为 `com.learntrail`，父工程为 `lt-parent`。业务服务在 Nacos 中注册为 `lt-auth`、`lt-user`、`lt-course` 等名称；网关路由、Feign Client 与认证公钥发现使用相同服务名。认证可执行模块为 `lt-auth/lt-auth-service`，其注册名为 `lt-auth`。
+
+HTTP 接口与业务数据结构保持兼容。消息转换器兼容升级前的 Java 类型头，持久化失败队列由独立配置指定，服务发现改名与消息队列生命周期分别管理。
 
 ## 统一认证与业务权限
 
@@ -42,7 +44,7 @@ flowchart TB
 
 Python Agent 使用同一套 RSA 公钥与 JWT，并通过 Java 用户接口复核账号状态；文章和学习工具继续调用业务接口执行资源权限检查。
 
-入口：[网关](../tj-gateway/src/main/java/com/tianji/gateway/) · [认证](../tj-auth/tj-auth-service/src/main/java/com/tianji/auth/) · [资源 SDK](../tj-auth/tj-auth-resource-sdk/)
+入口：[网关](../lt-gateway/src/main/java/com/learntrail/gateway/) · [认证](../lt-auth/lt-auth-service/src/main/java/com/learntrail/auth/) · [资源 SDK](../lt-auth/lt-auth-resource-sdk/)
 
 ## 内容生命周期
 
@@ -50,7 +52,7 @@ Python Agent 使用同一套 RSA 公钥与 JWT，并通过 Java 用户接口复�
 
 文章支持纯文本／Markdown、来源链接和作者信息，具备创建、编辑、发布、归档与运营管理。Markdown 前端禁用原始 HTML，并使用 DOMPurify 净化渲染结果。文章与专栏通过显式关联组织知识路径。
 
-入口：[StudioService](../tj-course/src/main/java/com/tianji/course/service/StudioService.java) · [StudioArticleService](../tj-learning/src/main/java/com/tianji/learning/service/StudioArticleService.java) · [媒体服务](../tj-media/src/main/java/com/tianji/media/service/impl/MediaServiceImpl.java)
+入口：[StudioService](../lt-course/src/main/java/com/learntrail/course/service/StudioService.java) · [StudioArticleService](../lt-learning/src/main/java/com/learntrail/learning/service/StudioArticleService.java) · [媒体服务](../lt-media/src/main/java/com/learntrail/media/service/impl/MediaServiceImpl.java)
 
 ## 积分交易与幂等
 
@@ -74,7 +76,7 @@ sequenceDiagram
 
 本地事务保证钱包、流水、结算凭证和学习权益一致；订单与券的跨服务状态通过幂等接口、真实凭证查询和恢复任务推进。取消处理中订单先检查实际结算结果，避免已扣分订单被错误取消。
 
-入口：[积分结算](../tj-learning/src/main/java/com/tianji/learning/service/PointsSettlementService.java) · [有效学习](../tj-learning/src/main/java/com/tianji/learning/service/LearningActivityService.java) · [积分订单](../tj-trade/src/main/java/com/tianji/trade/service/PointsOrderService.java) · [积分券](../tj-promotion/src/main/java/com/tianji/promotion/service/PointsCouponService.java)
+入口：[积分结算](../lt-learning/src/main/java/com/learntrail/learning/service/PointsSettlementService.java) · [有效学习](../lt-learning/src/main/java/com/learntrail/learning/service/LearningActivityService.java) · [积分订单](../lt-trade/src/main/java/com/learntrail/trade/service/PointsOrderService.java) · [积分券](../lt-promotion/src/main/java/com/learntrail/promotion/service/PointsCouponService.java)
 
 ## 学习进度缓存与异步落库
 
@@ -82,7 +84,7 @@ sequenceDiagram
 
 缓存键与记录对象共同携带课表及小节标识，更新保持进度语义和归属一致。前端页面离开、暂停与结束时补充保存，避免只依赖定时更新。
 
-入口：[LearningRecordServiceImpl](../tj-learning/src/main/java/com/tianji/learning/service/impl/LearningRecordServiceImpl.java) · [延迟处理](../tj-learning/src/main/java/com/tianji/learning/utils/LearningRecordDelayTaskHandler.java)
+入口：[LearningRecordServiceImpl](../lt-learning/src/main/java/com/learntrail/learning/service/impl/LearningRecordServiceImpl.java) · [延迟处理](../lt-learning/src/main/java/com/learntrail/learning/utils/LearningRecordDelayTaskHandler.java)
 
 ## 点赞与内容热度
 
@@ -94,13 +96,13 @@ sequenceDiagram
 
 公开列表从 MySQL 返回统计，排序在分页前执行；计数同步显式保留内容更新时间。
 
-入口：[Redis 实现](../tj-remark/src/main/java/com/tianji/remark/service/impl/LikedRecordServiceRedisImpl.java) · [Outbox](../tj-remark/src/main/java/com/tianji/remark/task/ContentStatsOutbox.java) · [文章消费](../tj-learning/src/main/java/com/tianji/learning/mq/ArticleStatsListener.java) · [专栏消费](../tj-course/src/main/java/com/tianji/course/mq/SeriesStatsListener.java)
+入口：[Redis 实现](../lt-remark/src/main/java/com/learntrail/remark/service/impl/LikedRecordServiceRedisImpl.java) · [Outbox](../lt-remark/src/main/java/com/learntrail/remark/task/ContentStatsOutbox.java) · [文章消费](../lt-learning/src/main/java/com/learntrail/learning/mq/ArticleStatsListener.java) · [专栏消费](../lt-course/src/main/java/com/learntrail/course/mq/SeriesStatsListener.java)
 
 ## 数据与服务契约
 
 - MySQL 保存内容、订单、权益和业务凭证；Redis 承担短周期状态与高频互动。
 - RabbitMQ 传递异步事件；业务消费者维护幂等或资源版本条件。
-- Feign Client 与跨服务 DTO 集中在 `tj-api`，接口变更与调用方在同一仓库维护。
+- Feign Client 与跨服务 DTO 集中在 `lt-api`，接口变更与调用方在同一仓库维护。
 - 业务迁移位于 [database/migrations](../database/migrations/)，逐次扩展领域结构。
 - AI PostgreSQL 独立保存会话、知识索引与工作流状态，业务事实通过 Java API 获取。
 

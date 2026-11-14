@@ -1,0 +1,5 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+  com.learntrail.api.config.RequestIdRelayConfiguration, \
+  com.learntrail.api.config.RoleCacheConfig, \
+  com.learntrail.api.config.FallbackConfig, \
+  com.learntrail.api.config.CategoryCacheConfig

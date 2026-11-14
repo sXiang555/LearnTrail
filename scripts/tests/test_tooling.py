@@ -1,5 +1,6 @@
 """Offline checks for the service launcher and credential scanner."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import Mock
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("verify_repository", ROOT / "scripts/verify_repository.py")
@@ -31,6 +35,53 @@ class LocalNetworkOptionsTest(unittest.TestCase):
             launcher.local_network_options("192.168.0.0/16", "192.168.150.1")
 
 
+class NacosConfigSelectionTest(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("run_local", ROOT / "scripts/run_local.py")
+        self.launcher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.launcher)
+        self.configs = {}
+        self.calls = []
+        self.denied = False
+        self.opener = Mock()
+        self.opener.open.side_effect = self.open
+
+    def open(self, url, timeout):
+        data_id = parse_qs(urlsplit(url).query)["dataId"][0]
+        self.calls.append(data_id)
+        if self.denied or data_id not in self.configs:
+            raise HTTPError(url, 403 if self.denied else 404, "fixture", {}, None)
+        response = io.BytesIO(self.configs[data_id])
+        response.status = 200
+        return response
+
+    def select(self):
+        return self.launcher.select_nacos_config_prefix(self.opener, "localhost", "gateway")
+
+    def test_canonical_config_wins_over_existing_config(self):
+        self.configs = {"lt-gateway.yaml": b"canonical: true", "gateway-service.yaml": b"legacy: true"}
+        self.assertEqual("lt-gateway", self.select())
+        self.assertNotIn("gateway-service.yaml", self.calls)
+
+    def test_canonical_local_profile_wins_over_existing_base(self):
+        self.configs = {"lt-gateway-local.yaml": b"canonical: true", "gateway-service.yaml": b"legacy: true"}
+        self.assertEqual("lt-gateway", self.select())
+
+    def test_existing_config_is_supported_without_changing_registration(self):
+        self.configs = {"gateway-service.yaml": b"legacy: true"}
+        self.assertEqual("gateway-service", self.select())
+        self.assertEqual("lt-gateway", self.launcher.SERVICES["gateway"][0])
+
+    def test_new_installation_keeps_canonical_prefix(self):
+        self.assertEqual("lt-gateway", self.select())
+
+    def test_access_error_does_not_silently_select_another_config(self):
+        self.denied = True
+        with self.assertRaises(HTTPError):
+            self.select()
+        self.assertEqual(["lt-gateway"], self.calls)
+
+
 class LauncherTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="learntrail test ")
@@ -38,7 +89,7 @@ class LauncherTest(unittest.TestCase):
         self.root = Path(self.tmp.name).resolve()
         shutil.copyfile(ROOT / "startup.sh", self.root / "startup.sh")
         shutil.copyfile(ROOT / "Dockerfile", self.root / "Dockerfile")
-        jar = self.root / "tj-learning/target/tj-learning.jar"
+        jar = self.root / "lt-learning/target/lt-learning.jar"
         jar.parent.mkdir(parents=True)
         jar.write_bytes(b"fixture-only")
         self.bin = self.root / "bin"
@@ -66,7 +117,7 @@ class LauncherTest(unittest.TestCase):
         env.pop("JAVA_OPTS", None)
         env.update(flags or {})
         return subprocess.run(
-            ["sh", str(self.root / "startup.sh"), "-n", "tj-learning", "-d", "tj-learning",
+            ["sh", str(self.root / "startup.sh"), "-n", "lt-learning", "-d", "lt-learning",
              "-p", "8090", *extra],
             cwd=self.root.parent, env=env, capture_output=True, text=True,
         )
@@ -95,7 +146,7 @@ class LauncherTest(unittest.TestCase):
         build = next(args for args in calls if args[0] == "build")
         run = next(args for args in calls if args[0] == "run")
         self.assertIn(str(self.root), build)
-        self.assertIn("JAR_FILE=tj-learning/target/tj-learning.jar", build)
+        self.assertIn("JAR_FILE=lt-learning/target/lt-learning.jar", build)
         self.assertEqual(str(env_file), run[run.index("--env-file") + 1])
         self.assertIn("8090:8090", run)
         self.assertEqual("--server.port=8090", run[-1])
@@ -129,7 +180,7 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual([], self.calls())
 
     def test_missing_jar_fails_before_docker(self):
-        (self.root / "tj-learning/target/tj-learning.jar").unlink()
+        (self.root / "lt-learning/target/lt-learning.jar").unlink()
         result = self.launch()
         self.assertNotEqual(0, result.returncode)
         self.assertIn("Package the module first", result.stderr)

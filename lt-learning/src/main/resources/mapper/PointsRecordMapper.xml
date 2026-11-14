@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.learntrail.learning.mapper.PointsRecordMapper">
+
+    <!-- 创建历史积分记录表 points_record_xx，DDL不走拦截器，直接拼接表名 -->
+    <update id="createPointsRecordTableBySeason" parameterType="java.lang.Integer">
+        CREATE TABLE IF NOT EXISTS `points_record_${season}`
+        (
+            `id`          BIGINT    NOT NULL AUTO_INCREMENT COMMENT '积分记录表id',
+            `user_id`     BIGINT    NOT NULL COMMENT '用户id',
+            `type`        TINYINT   NOT NULL COMMENT '积分方式：1-课程学习，2-每日签到，3-课程问答，4-课程笔记，5-课程评价',
+            `points`      INT       NOT NULL DEFAULT 0 COMMENT '积分值',
+            `create_time` DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+            PRIMARY KEY (`id`) USING BTREE,
+            INDEX `idx_user_id` (`user_id`) USING BTREE,
+            INDEX `idx_create_time` (`create_time`) USING BTREE
+        )
+            COMMENT ='学习积分记录'
+            COLLATE = 'utf8mb4_0900_ai_ci'
+            ENGINE = InnoDB
+            ROW_FORMAT = DYNAMIC
+    </update>
+
+</mapper>

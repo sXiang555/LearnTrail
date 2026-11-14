@@ -12,24 +12,25 @@ import subprocess
 import sys
 import time
 from urllib.request import ProxyHandler, build_opener
+from urllib.error import HTTPError
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICES = {
-    "user": ("tj-user", 8082),
-    "auth": ("tj-auth/tj-auth-service", 8081),
-    "gateway": ("tj-gateway", 10010),
-    "course": ("tj-course", 8086),
-    "search": ("tj-search", 8083),
-    "learning": ("tj-learning", 8090),
-    "trade": ("tj-trade", 8088),
-    "promotion": ("tj-promotion", 8092),
-    "remark": ("tj-remark", 8091),
-    "message": ("tj-message/tj-message-service", 8085),
-    "exam": ("tj-exam", 8089),
-    "pay": ("tj-pay/tj-pay-service", 8087),
-    "media": ("tj-media", 8084),
-    "data": ("tj-data", 8093),
+    "user": ("lt-user", 8082),
+    "auth": ("lt-auth/lt-auth-service", 8081),
+    "gateway": ("lt-gateway", 10010),
+    "course": ("lt-course", 8086),
+    "search": ("lt-search", 8083),
+    "learning": ("lt-learning", 8090),
+    "trade": ("lt-trade", 8088),
+    "promotion": ("lt-promotion", 8092),
+    "remark": ("lt-remark", 8091),
+    "message": ("lt-message/lt-message-service", 8085),
+    "exam": ("lt-exam", 8089),
+    "pay": ("lt-pay/lt-pay-service", 8087),
+    "media": ("lt-media", 8084),
+    "data": ("lt-data", 8093),
 }
 
 
@@ -105,6 +106,23 @@ def stop_children(children):
             process.wait()
 
 
+def select_nacos_config_prefix(opener, infra_host, service):
+    """Prefer the canonical Data ID while supporting an existing installation."""
+    canonical = "lt-" + service
+    for prefix in (canonical, service + "-service"):
+        for suffix in ("", ".yaml", "-local.yaml"):
+            url = ("http://" + infra_host + ":8848/nacos/v1/cs/configs?dataId="
+                   + prefix + suffix + "&group=DEFAULT_GROUP")
+            try:
+                with opener.open(url, timeout=5) as response:
+                    if response.status == 200 and response.read().strip():
+                        return prefix
+            except HTTPError as error:
+                if error.code != 404:
+                    raise
+    return canonical
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--services", nargs="+", choices=SERVICES, default=list(SERVICES))
@@ -137,6 +155,10 @@ def main():
             probe.connect((args.infra_host, 8848))
             register_ip = args.register_ip or probe.getsockname()[0]
         services = list(dict.fromkeys(args.services))
+        config_prefixes = {
+            name: select_nacos_config_prefix(opener, args.infra_host, name)
+            for name in services
+        }
         for name in services:
             module, port = SERVICES[name]
             jar = ROOT / module / "target" / (Path(module).name + ".jar")
@@ -159,8 +181,9 @@ def main():
             command = [str(java), "-Xms32m", "-Xmx256m", *local_network_options(args.infra_host, register_ip), "-jar", str(jar),
                        "--spring.profiles.active=local",
                        "--spring.cloud.nacos.server-addr=" + args.infra_host + ":8848",
+                       "--spring.cloud.nacos.config.prefix=" + config_prefixes[name],
                        "--spring.cloud.nacos.discovery.ip=" + register_ip,
-                       "--logging.level.com.tianji=info", "--logging.level.com.alibaba.nacos=warn",
+                       "--logging.level.com.learntrail=info", "--logging.level.com.alibaba.nacos=warn",
                        "--logging.level.io.seata=warn", "--logging.file.path=" + str(folder),
                        "--tj.xxl-job.executor.ip=" + register_ip,
                        "--tj.xxl-job.executor.port=" + str(port + 11000),

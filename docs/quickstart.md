@@ -82,6 +82,21 @@ python3 scripts/run_local.py --infra-host YOUR_INFRA_HOST --register-ip YOUR_BAC
 
 网关端口10010；课程8086、学习8090、点赞8091、认证8081、用户8082、媒资8084。完整模块与端口映射见 [run_local.py](../scripts/run_local.py)。启动器检查端口并仅管理自己创建的进程。
 
+### 模块与运行配置
+
+Maven 父工程为 `com.learntrail:lt-parent`，所有 Java 模块采用 `lt-*` 名称，源码位于 `com/learntrail` 包目录。可执行 JAR 以模块 artifactId 命名，例如 `lt-learning/target/lt-learning.jar`；认证服务为 `lt-auth/lt-auth-service/target/lt-auth-service.jar`。
+
+服务注册名统一为 `lt-gateway`、`lt-auth`、`lt-user`、`lt-course`、`lt-media`、`lt-learning`、`lt-remark`、`lt-trade`、`lt-promotion`、`lt-search`、`lt-message`、`lt-pay`、`lt-exam`、`lt-data`。网关路由、Feign 与公钥发现按这些名称调用，HTTP 业务路径保持一致。
+
+已有环境更新时：
+
+1. 重新构建并成套切换 Java 服务，使用新的模块路径和 JAR 名称。
+2. 若 Nacos 使用服务专属配置，将配置迁移至相应的新服务 Data ID，例如 `lt-learning.yaml`、`lt-learning-local.yaml`；共享配置仍使用 `shared-*.yaml`。检查其中的 Java 类路径、日志包名与服务目标。本地启动器优先读取新 Data ID，尚未迁移时兼容读取已有配置；在 IDE 中启动可通过 `spring.cloud.nacos.config.prefix` 显式选择现有配置。
+3. 若 XXL-JOB 的执行器名称取自服务名，同步调整执行器分组；显式指定独立执行器名称的配置可继续使用。
+4. 数据库名称、表结构、Redis 键、MQ 交换机和业务队列沿用既有数据契约。`tj.mq.error-service-name` 独立指定持久化失败队列标识，消息转换器兼容升级前保存的 Java 类型头；升级时统一切换消费者。
+
+新环境按上述注册名准备配置即可，配置前缀与数据名称无需额外更改。
+
 ## 4. 配置并启动 AI
 
 在 PostgreSQL业务实例中准备 AI专用库和账号，由管理员安装pgvector扩展：

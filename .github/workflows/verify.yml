@@ -41,7 +41,7 @@ jobs:
         # Existing integration tests need infrastructure; this job never runs them.
         run: mvn -B -Dstyle.color=never -DskipTests clean test-compile
       - name: Test platform rules without infrastructure
-        run: mvn -B -Dstyle.color=never -pl tj-user,tj-course,tj-learning,tj-auth/tj-auth-service,tj-trade,tj-promotion,tj-remark -am -Dtest=UserOperationsServiceTest,UserAccountSecurityTest,DiscussionSecurityTest,StudioLifecycleTest,CreatorRankingTest,StudioPointsServiceTest,StudioArticleServiceTest,LearningRecordAccessTest,LearningRecordCacheTest,AccountRefreshTest,LearningActivityServiceTest,PointsSettlementServiceTest,PointsCouponServiceTest,OrderPointsBoundaryTest,PointsOrderServiceTest,PointsOrderStoreTest,ContentLikeServiceTest,ContentStatsOutboxTest,ArticleStatsListenerTest -Dsurefire.failIfNoSpecifiedTests=false test
+        run: mvn -B -Dstyle.color=never -pl lt-user,lt-course,lt-learning,lt-auth/lt-auth-service,lt-trade,lt-promotion,lt-remark -am -Dtest=ModuleNamingContractTest,MqNamingCompatibilityTest,UserOperationsServiceTest,UserAccountSecurityTest,DiscussionSecurityTest,StudioLifecycleTest,CreatorRankingTest,StudioPointsServiceTest,StudioArticleServiceTest,LearningRecordAccessTest,LearningRecordCacheTest,AccountRefreshTest,LearningActivityServiceTest,PointsSettlementServiceTest,PointsCouponServiceTest,OrderPointsBoundaryTest,PointsOrderServiceTest,PointsOrderStoreTest,ContentLikeServiceTest,ContentStatsOutboxTest,ArticleStatsListenerTest -Dsurefire.failIfNoSpecifiedTests=false test
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
