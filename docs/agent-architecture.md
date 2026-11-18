@@ -9,7 +9,7 @@
 | 部署入口 | `deployment.py` | 对外 API 白名单、生命周期透传 |
 | HTTP API | `api_sessions.py`、`api_agent.py`、`api_capabilities.py` | 请求模型、JWT 身份、SSE 与响应协议 |
 | 服务 | `services/` | 会话、任务、来源复核、取消与恢复 |
-| Agent | `agent/` | StateGraph、工具注册与执行、Skills、策略 |
+| Agent | `agent/` | 助手分派、StateGraph、工具注册与执行、Skills |
 | RAG | `rag/` | 清洗、分块、增量索引、召回、融合与引用问答 |
 | 外部客户端 | `clients/` | 模型、Embedding、Reranker、Java 与 MCP |
 | 数据访问 | `storage/` | 会话、索引、Checkpoint、审批、记忆 |
@@ -21,22 +21,40 @@
 
 ```mermaid
 stateDiagram-v2
-    [*] --> select_skill
+    [*] --> supervisor
+    supervisor --> select_skill
     select_skill --> memory
-    memory --> agent
+    memory --> agent: 学习
+    memory --> creator: 创作
+    memory --> operations: 运营或协作
     agent --> gate: tool_calls
-    agent --> verify: answer
+    creator --> gate: tool_calls
+    operations --> gate: tool_calls
     gate --> tools: read_only / approved
-    gate --> paused: approval_required
+    gate --> paused: 审批或请求暂停
     paused --> gate: decision + resume
-    tools --> agent: tool results
+    tools --> agent: 学习工具结果
+    tools --> creator: 创作工具结果
+    tools --> operations: 运营工具结果
+    operations --> handoff: 协作运营结果
+    handoff --> creator: 创作参考
+    creator --> handoff: 协作创作结果
+    handoff --> synthesis: 两份结果齐备
+    synthesis --> verify
+    agent --> verify: 回答完成
+    creator --> verify: 独立创作完成
+    operations --> verify: 独立运营完成
     verify --> completed
     completed --> [*]
 ```
 
-`WorkflowState` 保存消息、选中技能、工具调用与执行状态。LangGraph 使用服务端生成的 thread 映射关联会话；Checkpoint 加密后写入 PostgreSQL。恢复时读取原状态并重新检查归属、审批有效期与资源快照，再继续执行。
+`supervisor` 依照请求模式或意图关键词分派。学习助手实际执行技能和记忆节点。独立的创作与运营任务跳过这两项准备，使用公开文章工具。协作在同一个 Run 内先运营、再创作，汇总节点根据两份结果回答，整个流程共用模型轮数、工具次数和总时限。
 
-模型流、图节点、工具事件和终态通过 SSE 发送。临时内容用于即时呈现，完成事件对应持久化结果；取消与断连进入统一清理逻辑。
+`WorkflowState` 保存助手分派、阶段结果、消息、工具调用和执行状态。服务端创建 Checkpoint thread 标识并关联会话，图状态加密后写入 PostgreSQL。恢复时读取原状态，核验会话归属和已保存来源，并按任务类型复核运营权限或审批状态。
+
+图节点、工具事件和文本增量通过 SSE 发送。协作时输出过程状态和最终汇总的文本增量。单条流队列上限为 256 个事件，满时等待下游腾出空间。持久化完整结果后发送 `done`，取消与断连进入统一清理逻辑。
+
+源码入口见 [分派规则](../learntrail-agent/src/learntrail_agent/agent/assistants.py)、[状态图](../learntrail-agent/src/learntrail_agent/agent/loop.py) 和 [运行服务](../learntrail-agent/src/learntrail_agent/services/agent.py)。
 
 ## RAG 数据流
 
@@ -57,6 +75,8 @@ flowchart TB
 ```
 
 索引指纹绑定正文与 Embedding／Chunk 配置。内容更新切换 generation，重复内容跳过；归档、屏蔽及当前权限变化会影响可返回的证据。引用记录标题、Chunk、Unicode字符位置和内容哈希，连接到站内阅读页及原始来源。
+
+站内文章查找与 RAG 引用检索分别由 `search_articles` 和 `search_knowledge_base` 提供。文章查找在默认排序且标题摘要无匹配时通过 Java 的 Elasticsearch 接口补查全文。全文结果仍需复核文章状态和正文权限。只有当前公开目录确认存在且正文读取明确被拒绝，才返回当前页的受限数量。
 
 ## 工具、Skills 与记忆
 

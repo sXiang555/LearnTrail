@@ -2,7 +2,7 @@
 
 **把内容创作、知识学习与 AI 助手连接起来的创作者知识平台。**
 
-LearnTrail 基于微服务架构持续开发，以文章与视频专栏为内容载体，通过积分交易、学习记录与互动沉淀学习过程。平台中的 AI 助手共享业务身份，能够检索知识、查询学习进度、调用工具，并通过持久化工作流完成多轮任务与人工确认。
+LearnTrail 以文章和视频专栏为内容载体，支持创作、积分解锁、进度续播与互动。平台提供学习、创作者和运营三种 AI 助手，共用 Java 登录身份和业务权限。用户可以切换助手，运营人员还可以让运营和创作者助手协作。
 
 ![Java](https://img.shields.io/badge/Java-11-437291?logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-2.7-6DB33F?logo=springboot&logoColor=white)
@@ -15,8 +15,8 @@ LearnTrail 基于微服务架构持续开发，以文章与视频专栏为内容
 
 | 模块 | 解决的问题 | 阅读入口 |
 | --- | --- | --- |
-| **LearnTrail Backend** | 身份认证、内容发布、积分交易、学习进度、互动计数与服务协作 | [Java 后端架构](docs/backend-architecture.md) |
-| **LearnTrail AI** | 混合检索、工具调用、工作流恢复、Skills、Memory、MCP 与 HITL | [Agent 专属介绍](learntrail-agent/README.md) |
+| **LearnTrail Backend** | 身份认证、内容发布、可恢复的分片上传、全文搜索、积分结算与学习权益 | [Java 后端架构](docs/backend-architecture.md) |
+| **LearnTrail AI** | 三种业务助手、混合检索、工具调用、工作流恢复与人工审批 | [Agent 专属介绍](learntrail-agent/README.md) |
 | **LearnTrail Web** | 统一登录、文章与视频、创作台、个人中心和 AI 助手 | [Vue 3 源码](frontend/learntrail-web/) |
 
 ## 整体架构
@@ -27,20 +27,25 @@ flowchart TB
     Nginx -->|/api| Gateway[Spring Cloud Gateway]
     Nginx -->|/ai| AI[FastAPI · LearnTrail AI]
     Gateway --> Auth[身份与用户]
-    Gateway --> Content[内容与媒资]
+    Gateway --> Content[文章与视频专栏]
+    Gateway --> Media[媒资与分片上传]
+    Gateway --> Search[站内全文搜索]
     Gateway --> Learning[学习与积分]
     Gateway --> Trade[交易与优惠券]
     Gateway --> Remark[点赞与互动]
     AI -->|JWT 身份复用 · 业务 API| Gateway
-    AI --> Graph[LangGraph · 工具与工作流]
+    AI --> Graph[LangGraph · 助手分派与工具调用]
     Graph --> RAG[Vector + BM25 + RRF]
     Graph --> Capabilities[Skills · Memory · MCP · HITL]
     RAG --> PG[(PostgreSQL + pgvector)]
     Capabilities --> PG
     Content & Learning & Trade --> MySQL[(MySQL)]
-    Learning & Remark --> Redis[(Redis)]
-    Remark --> MQ[RabbitMQ · 异步事件]
+    Content & Learning & Remark --> Redis[(Redis)]
+    Media --> MinIO[(MinIO · 私有媒资)]
+    MySQL -->|公开内容 Outbox| Canal[Canal]
+    Canal & Remark --> MQ[RabbitMQ · 异步事件]
     MQ --> Content & Learning
+    MQ --> Search --> ES[(Elasticsearch)]
     Graph --> Telemetry[Langfuse · OpenTelemetry]
 ```
 
@@ -50,12 +55,12 @@ Java 负责业务事实与资源权限，Python 通过业务 API 获取内容和
 
 | 场景 | 实现 |
 | --- | --- |
-| 内容发现 | 文章列表、视频网格、创作者榜单、搜索分页、点赞与浏览／播放量排序 |
-| 创作者工作台 | Markdown 文章、视频上传与分集编排、试看、专栏发布与修订、上下架 |
-| 积分交易 | 独立钱包、有效学习奖励、积分订单、单张积分券、权益发放与完整流水 |
+| 内容发现 | 文章和专栏全文搜索、创作者榜单、点赞与浏览／播放量排序 |
+| 创作者工作台 | Markdown 文章、视频分片上传与断点续传、异步转码、试看和专栏修订 |
+| 积分交易 | 独立钱包、有效学习奖励、积分订单、单张积分券、权益发放和结算恢复 |
 | 连续学习 | 视频播放授权、试看校验、进度续播、课表、收藏与讨论 |
 | 内容互动 | 文章／专栏点赞与取消、公开计数、版本化异步聚合、浏览／播放去重 |
-| AI 学习助手 | 知识问答、文章搜索、学习进度查询、工具轨迹、流式输出、暂停与恢复 |
+| AI 助手 | 知识问答与学习进度、稿件润色与大纲、公开内容盘点与选题。运营和协作模式仅对运营人员开放 |
 | 可观测与评测 | 请求／模型／工具 Trace、Token 与耗时、检索对照实验、答案与功能契约评测 |
 
 ## 界面预览
@@ -80,7 +85,8 @@ Java 负责业务事实与资源权限，Python 通过业务 API 获取内容和
 
 - **积分交易一致性**：钱包行锁与唯一业务事件控制并发、幂等；扣分、流水、结算凭证和学习权益在同一事务提交，跨服务订单与优惠券通过状态机和恢复任务协调。
 - **可靠的互动聚合**：Redis Lua 原子维护点赞关系与统计版本，RabbitMQ 分发快照，MySQL 条件更新防止乱序覆盖，写库完成后按版本确认。
-- **可恢复的 Agent**：Function Calling 对接工具 Registry／Executor，LangGraph 编排 Skills、Memory、模型、审批门和工具节点，PostgreSQL 保存加密 Checkpoint。
+- **可恢复的媒资和搜索链路**。分片状态可从 MinIO 找回，媒体处理任务支持租约恢复。MySQL Outbox 经 Canal、RabbitMQ 同步公开内容到 Elasticsearch。
+- **可恢复的 Agent**。LangGraph 按模式分派任务，复用工具执行器。学习助手的审批暂停和恢复以 PostgreSQL 加密 Checkpoint 为基础，Vue 流式显示 Markdown 回答。
 - **共享业务权限的 RAG**：发布文章增量索引，向量／BM25 双路召回与 RRF 融合，检索及回答阶段复核 Java 内容权限与来源快照。
 - **用实验选择方案**：v5 的 150 条检索题覆盖 19 篇已发布文章，在同一索引上完成 Vector、BM25 与 Hybrid 的 450 次真实搜索，比较召回、排序与零相关误召回。
 
@@ -119,7 +125,7 @@ LearnTrail/
 
 ## 运行与开发
 
-Java 11、Maven、Node.js 24、Python 3.12／uv；业务依赖 MySQL、Redis、RabbitMQ、Nacos，AI 使用 PostgreSQL／pgvector。
+使用 Java 11、Maven、Node.js 24 和 Python 3.12／uv。Java 业务依赖 MySQL、Redis、RabbitMQ 和 Nacos，AI 使用 PostgreSQL／pgvector。按部署需要启用 MinIO 分片上传及 Elasticsearch／IK 与 Canal 全文索引。
 
 ```bash
 # Java：显式使用 JDK 11
