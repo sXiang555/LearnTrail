@@ -15,7 +15,9 @@ public interface PointsOrderMapper {
             "total_points,discount_points,payable_points,user_coupon_id) VALUES(#{orderId},#{userId},#{requestKey},#{kind}," +
             "#{targetId},#{title},#{slug},#{totalPoints},#{discountPoints},#{payablePoints},#{userCouponId})")
     int insert(PointsTrade.Order order);
-    @Update("UPDATE learntrail_point_order SET phase=#{phase},updated_at=NOW() WHERE order_id=#{id}")
+    @Update("UPDATE learntrail_point_order SET phase=#{phase},updated_at=NOW(),recovery_attempts=0," +
+            "recovery_due_at=DATE_ADD(NOW(3),INTERVAL 30 SECOND),recovery_token=NULL," +
+            "recovery_lease_until=NULL,recovery_error=NULL WHERE order_id=#{id}")
     void phase(@Param("id") Long id, @Param("phase") String phase);
     @Select("<script>SELECT COUNT(*) FROM learntrail_point_order WHERE user_id=#{user}" +
             "<if test='phase != null'> AND phase=#{phase}</if></script>")
@@ -24,11 +26,21 @@ public interface PointsOrderMapper {
             "<if test='phase != null'> AND phase=#{phase}</if> ORDER BY created_at DESC,order_id DESC LIMIT #{size} OFFSET #{offset}</script>")
     List<PointsTrade.Order> page(@Param("user") Long user, @Param("phase") String phase,
             @Param("offset") int offset, @Param("size") int size);
-    @Select("SELECT * FROM learntrail_point_order WHERE phase IN ('PAYING','CANCELLING') " +
-            "AND updated_at < DATE_SUB(NOW(),INTERVAL 30 SECOND) ORDER BY updated_at LIMIT 30")
+    String DUE = "phase IN ('PAYING','CANCELLING') AND recovery_attempts<8 " +
+            "AND (recovery_due_at<=NOW(3) OR (recovery_due_at IS NULL AND updated_at<=DATE_SUB(NOW(3),INTERVAL 30 SECOND))) " +
+            "AND (recovery_lease_until IS NULL OR recovery_lease_until<=NOW(3))";
+
+    @Select("SELECT * FROM learntrail_point_order WHERE " + DUE + " ORDER BY recovery_due_at,order_id LIMIT 20")
     List<PointsTrade.Order> pending();
-    @Update("UPDATE learntrail_point_order SET updated_at=NOW() WHERE order_id=#{id} AND phase=#{phase}")
-    void touch(@Param("id") Long id, @Param("phase") String phase);
+    @Update("UPDATE learntrail_point_order SET recovery_token=#{token},recovery_attempts=recovery_attempts+1," +
+            "recovery_lease_until=DATE_ADD(NOW(3),INTERVAL 120 SECOND),recovery_error='INTERRUPTED' " +
+            "WHERE order_id=#{id} AND phase=#{phase} AND " + DUE)
+    int claimRecovery(@Param("id") Long id, @Param("phase") String phase, @Param("token") String token);
+    @Update("UPDATE learntrail_point_order SET recovery_due_at=DATE_ADD(NOW(3), " +
+            "INTERVAL LEAST(1800,30*(1 << (recovery_attempts-1))) SECOND),recovery_error=#{error}," +
+            "recovery_lease_until=NULL,recovery_token=NULL WHERE order_id=#{id} AND phase=#{phase} AND recovery_token=#{token}")
+    int retryRecovery(@Param("id") Long id, @Param("phase") String phase,
+                      @Param("token") String token, @Param("error") String error);
     @Update("UPDATE `order` SET status=#{status},message=#{message},pay_channel='POINTS'," +
             "pay_time=IF(#{status}=2,NOW(),pay_time),close_time=IF(#{status}=3,NOW(),close_time) WHERE id=#{id} AND pay_channel='POINTS'")
     void orderStatus(@Param("id") Long id, @Param("status") int status, @Param("message") String message);

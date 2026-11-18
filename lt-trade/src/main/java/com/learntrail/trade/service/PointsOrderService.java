@@ -104,6 +104,31 @@ public class PointsOrderService {
         return snapshot(id);
     }
 
+    void resume(PointsTrade.Order order) {
+        Long id = order.getOrderId();
+        boolean cancelling = "CANCELLING".equals(order.getPhase());
+        PointsTrade.Receipt receipt = wallet.receipt(id);
+        if (receipt == null) {
+            if (cancelling) cancel(id);
+            else pay(id);
+            return;
+        }
+        boolean captured = "CAPTURED".equals(receipt.getStatus());
+        boolean cancelled = "CANCELLED".equals(receipt.getStatus());
+        if (!Objects.equals(id, receipt.getOrderId()) || !Objects.equals(user(), receipt.getUserId())
+                || !Objects.equals(order.getTargetId(), receipt.getTargetId())
+                || !Objects.equals(order.getKind(), receipt.getKind())
+                || (captured && !Objects.equals(receipt.getAmount(), order.getPayablePoints()))
+                || (!captured && !(cancelling && cancelled && Integer.valueOf(0).equals(receipt.getAmount())))) {
+            throw new IllegalStateException("积分订单与结算凭证不匹配");
+        }
+        if (needsCoupon(order)) {
+            if (captured) coupons.complete(id);
+            else coupons.release(id);
+        }
+        store.finish(id, user(), captured);
+    }
+
     private boolean needsCoupon(PointsTrade.Order order) {
         return order.getUserCouponId() != null || "COUPON".equals(order.getKind());
     }

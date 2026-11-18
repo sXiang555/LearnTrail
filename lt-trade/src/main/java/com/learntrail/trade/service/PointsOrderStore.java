@@ -48,7 +48,7 @@ public class PointsOrderStore {
         String phase = order.getPhase();
         if (cancel) {
             if ("PAID".equals(phase)) throw new BadRequestException("已支付订单不能取消");
-            if (!"CANCELLED".equals(phase)) mapper.phase(id, "CANCELLING");
+            if (!"CANCELLED".equals(phase) && !"CANCELLING".equals(phase)) mapper.phase(id, "CANCELLING");
         } else {
             if ("CANCELLED".equals(phase) || "CANCELLING".equals(phase)) throw new BadRequestException("订单已取消或正在取消");
             if ("CREATED".equals(phase)) {

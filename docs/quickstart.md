@@ -97,6 +97,13 @@ Maven 父工程为 `com.learntrail:lt-parent`，所有 Java 模块采用 `lt-*` 
 
 新环境按上述注册名准备配置即可，配置前缀与数据名称无需额外更改。
 
+### 启用分片上传、缓存和全文检索
+
+- **积分结算恢复**：升级 `lt-trade` 前执行迁移 `V20261118_13`。
+- **分片上传与媒体处理**：执行 `V20261118_10`，准备浏览器可访问的 MinIO 私有桶，配置跨域 PUT 并暴露 `ETag`。从 [环境模板](../.env.example) 配置 MinIO 和 FFmpeg/ffprobe，在 `lt-media` 启用 `LEARNTRAIL_MULTIPART_ENABLED=true`、`spring.rabbitmq.publisher-confirm-type=correlated` 与 `spring.rabbitmq.publisher-returns=true`。可用 [构建脚本](../scripts/build_minio.sh) 从固定版本的 MinIO 官方源码构建。
+- **公开内容缓存**：执行 `V20261118_11`，在 `lt-course` 和 `lt-learning` 设置 `learntrail.content.public-cache.enabled=true`。
+- **全文检索**：执行 `V20261118_12`，准备与 Elasticsearch 版本匹配的 IK 插件，在 `lt-search` 设置 `learntrail.search.content.enabled=true`。Canal 订阅 `tj_learning` 与 `tj_course` 的 `learntrail_search_outbox`，使用 RabbitMQ FlatMessage 模式，将消息投递到交换机 `learntrail.content.cdc`，路由键为 `content.outbox`。队列由搜索服务创建。两端启动后执行 [公开索引回放](../database/replay_public_search.sql) 导入已有内容。
+
 ## 4. 配置并启动 AI
 
 在 PostgreSQL业务实例中准备 AI专用库和账号，由管理员安装pgvector扩展：

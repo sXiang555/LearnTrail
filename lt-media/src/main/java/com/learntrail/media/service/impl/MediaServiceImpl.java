@@ -31,6 +31,7 @@ import com.learntrail.media.service.IMediaService;
 import com.learntrail.media.storage.IMediaStorage;
 import com.learntrail.media.storage.LocalVideoStorage;
 import com.learntrail.media.storage.MediaUploadResult;
+import com.learntrail.media.storage.ObjectVideoPlayback;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -58,6 +59,7 @@ public class MediaServiceImpl extends ServiceImpl<MediaMapper, Media> implements
 
     private final IMediaStorage mediaStorage;
     private final LocalVideoStorage localVideoStorage;
+    private final ObjectVideoPlayback objectVideoPlayback;
 
     private final CourseClient courseClient;
 
@@ -183,7 +185,8 @@ public class MediaServiceImpl extends ServiceImpl<MediaMapper, Media> implements
         // 1.根据id查询媒资信息
         Media media = getById(mediaId);
         AssertUtils.isNotNull(media, MEDIA_NOT_EXISTS);
-        if (localVideoStorage.isLocal(media.getFileId()) && !requireStudioUser().equals(media.getCreater())) {
+        if ((localVideoStorage.isLocal(media.getFileId()) || objectVideoPlayback.isStored(media.getFileId()))
+                && !requireStudioUser().equals(media.getCreater())) {
             throw new ForbiddenException("只能预览自己上传的视频");
         }
         return playback(media, null);
@@ -194,6 +197,8 @@ public class MediaServiceImpl extends ServiceImpl<MediaMapper, Media> implements
         if (localVideoStorage.isLocal(media.getFileId())) {
             if (!localVideoStorage.enabled()) throw new BadRequestException("本地视频存储暂不可用");
             vo.setUrl(localVideoStorage.playbackPath(media.getFileId(), previewMinutes));
+        } else if (objectVideoPlayback.isStored(media.getFileId())) {
+            vo.setUrl(objectVideoPlayback.url(media, previewMinutes));
         } else {
             vo.setFileId(media.getFileId());
             vo.setSignature(mediaStorage.getPlaySignature(media.getFileId(), UserContext.getUser(), previewMinutes));

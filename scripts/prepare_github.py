@@ -24,6 +24,7 @@ PUBLIC_DOCS = {
 PUBLIC_SCRIPTS = {
     "scripts/run_local.py", "scripts/verify_repository.py", "scripts/prepare_github.py",
     "scripts/seed_research_demo.py", "scripts/smoke_creator.py",
+    "scripts/build_minio.sh",
     "scripts/tests/test_tooling.py", "scripts/tests/test_research_demo.py",
     "scripts/tests/test_prepare_github.py",
 }
@@ -50,10 +51,12 @@ def public_path(name: str) -> bool:
         or name.startswith("learntrail-agent/")
         or name.startswith(".github/")
         or name.startswith("database/migrations/")
+        or name == "database/replay_public_search.sql"
         or name == "database/demo/V20261113_01__rag_agent_catalog.json"
         or name.startswith("docs/content/")
         or name.startswith("docs/screenshots/")
         or name.startswith("deploy/nginx/")
+        or name == "deploy/minio/Dockerfile"
     )
 
 

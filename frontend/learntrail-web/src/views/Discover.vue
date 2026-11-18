@@ -24,9 +24,11 @@ const loading = ref(true)
 const error = ref('')
 const total = ref(0)
 const pages = ref(0)
+const matches = ref(null)
 const creatorTotal = ref(0)
 const creatorPages = ref(0)
 const page = computed(() => Math.min(100000, Math.max(1, Math.floor(Number(route.query.page) || 1))))
+const useFullText = computed(() => !props.creatorsOnly && !!props.search && !props.topic && props.sort === 'recommended')
 const changePage = value => router.replace({ query: { ...route.query, page: value > 1 ? value : undefined } })
 let requestId = 0
 onBeforeUnmount(() => { requestId++ })
@@ -42,16 +44,21 @@ async function load(keepVisible = false) {
   if (props.search) query.set('q', props.search)
   if (props.topic) query.set('topic', props.topic)
   try {
+    const fullText = useFullText.value ? await api('/ss/content-search?' + new URLSearchParams({
+      q: props.search, kind: props.kind === 'video' ? 'series' : 'all', pageNo: Math.min(page.value, 500), pageSize: 12
+    })).catch(() => null) : null
+    if (currentRequest !== requestId) return
+    matches.value = fullText
     const articleQuery = new URLSearchParams({ pageNo: 1, pageSize: 6 })
     articleQuery.set('sort', ['likes', 'views'].includes(props.sort) ? props.sort : 'newest')
     if (props.search) articleQuery.set('q', props.search)
     const [data, filtered, creators, knowledge] = await Promise.all([
       api(studioApi + '/home'),
-      props.creatorsOnly || props.kind === 'articles' ? null : api(studioApi + '/series/page?' + query),
+      fullText || props.creatorsOnly || props.kind === 'articles' ? null : api(studioApi + '/series/page?' + query),
       props.creatorsOnly || props.search ? api(studioApi + '/creators/page?' + new URLSearchParams({
         q: props.search, pageNo: props.creatorsOnly ? page.value : 1, pageSize: props.creatorsOnly ? 12 : 8
       })) : null,
-      !props.creatorsOnly && props.kind !== 'video' ? api('/ls/studio-articles/published?' + articleQuery) : null
+      !fullText && !props.creatorsOnly && props.kind !== 'video' ? api('/ls/studio-articles/published?' + articleQuery) : null
     ])
     if (currentRequest !== requestId) return
     home.value = data
@@ -102,7 +109,24 @@ function explore() { document.getElementById('collection')?.scrollIntoView({ beh
         </div>
       </section>
     </template>
-    <div v-if="!creatorsOnly && kind !== 'articles'" id="collection" class="collection">
+    <section v-if="useFullText && matches" class="collection" aria-labelledby="fulltext-title" :aria-busy="loading">
+      <div class="section-title">
+        <h2 id="fulltext-title">“{{ search }}”的搜索结果 <span class="count-pill">{{ matches.total }}</span></h2>
+      </div>
+      <p v-if="loading" role="status">正在搜索…</p>
+      <ul v-else-if="matches.list.length" class="search-matches">
+        <li v-for="result in matches.list" :key="result.kind + ':' + result.id">
+          <RouterLink :to="(result.kind === 'article' ? '/articles/' : '/series/') + result.slug">
+            <small>{{ result.kind === 'article' ? '文章' : '视频专栏' }}</small>
+            <h3>{{ result.title }}</h3>
+            <p v-if="result.summary">{{ result.summary }}</p>
+          </RouterLink>
+        </li>
+      </ul>
+      <p v-else class="content-tip">没有找到匹配的内容，试试其他关键词。</p>
+      <Pagination :page="Math.min(page, 500)" :pages="Math.min(matches.pages, 500)" :total="matches.total" :busy="loading" @change="changePage" />
+    </section>
+    <div v-else-if="!creatorsOnly && kind !== 'articles'" id="collection" class="collection">
       <div class="section-title">
         <h2><span>{{ search ? '关于「' + search + '」的视频' : '视频' }}</span><span class="count-pill">{{ total }}</span></h2>
         <RouterLink v-if="kind === 'all'" :to="{ path: '/', query: { kind: 'video', q: search || undefined } }" class="text-link">更多视频 <Icon name="arrow" :size="16" /></RouterLink>
@@ -127,7 +151,7 @@ function explore() { document.getElementById('collection')?.scrollIntoView({ beh
       <div v-else class="empty-state small"><Icon name="search" :size="32" /><h3>还没有找到这类内容</h3><p>换个关键词，或探索其他主题。</p></div>
       <Pagination :page="page" :pages="pages" :total="total" :busy="loading" @change="changePage" />
     </div>
-    <section v-if="!creatorsOnly && kind === 'all'" class="knowledge-section" aria-labelledby="knowledge-title">
+    <section v-if="!(useFullText && matches) && !creatorsOnly && kind === 'all'" class="knowledge-section" aria-labelledby="knowledge-title">
       <div class="section-title"><h2 id="knowledge-title">{{ search ? '关于「' + search + '」的文章' : '文章' }} <span class="count-pill">{{ articles.total }}</span></h2><RouterLink :to="{ path: '/articles', query: { q: search || undefined, sort: ['likes', 'views'].includes(sort) ? sort : undefined } }" class="text-link">全部文章 <Icon name="arrow" :size="16" /></RouterLink></div>
       <p v-if="loading" role="status">正在载入文章…</p>
       <div v-else-if="articles.list.length" class="article-list"><ArticleCard v-for="article in articles.list" :key="article.id" :article="article" /></div>
@@ -155,6 +179,13 @@ function explore() { document.getElementById('collection')?.scrollIntoView({ beh
 .content-types a:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 .knowledge-section { margin: 60px 0; }
 .article-list { border-top: 1px solid var(--line); }
+.search-matches { padding: 0; margin: 0; list-style: none; border-top: 1px solid var(--line); }
+.search-matches li { border-bottom: 1px solid var(--line); }
+.search-matches a { display: block; padding: 16px 10px; overflow-wrap: anywhere; }
+.search-matches a:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.search-matches a:hover h3 { text-decoration: underline; }
+.search-matches h3, .search-matches p { margin: 6px 0 0; }
+.search-matches small, .search-matches p { color: var(--secondary-text); }
 .ranking-rule { margin: -6px 0 22px; color: var(--secondary-text); font-size: 13px; }
 @media (max-width: 600px) { .knowledge-section { margin: 42px 0; } }
 </style>

@@ -10,6 +10,7 @@ import com.learntrail.api.dto.leanring.LearningRecordDTO;
 import com.learntrail.api.dto.user.UserDTO;
 import com.learntrail.api.dto.learning.StudioArticleLinkDTO;
 import com.learntrail.common.domain.dto.PageDTO;
+import com.learntrail.common.autoconfigure.redisson.PublicContentCache;
 import com.learntrail.common.exceptions.BadRequestException;
 import com.learntrail.common.exceptions.DbException;
 import com.learntrail.common.exceptions.ForbiddenException;
@@ -27,6 +28,8 @@ import com.learntrail.course.domain.vo.StudioView;
 import com.learntrail.course.domain.query.StudioQuery;
 import com.learntrail.course.mapper.StudioMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.Data;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
@@ -47,6 +50,8 @@ public class StudioService {
     private final ICourseCatalogueDraftService catalogueDraftService;
     private final ICourseCatalogueService catalogueService;
     private final UserClient userClient;
+    @Autowired(required = false)
+    private PublicContentCache publicCache;
 
     public Map<String, Object> home() {
         List<StudioView.Series> series = page(new StudioQuery()).getList();
@@ -97,12 +102,13 @@ public class StudioService {
         StudioView.Series series = mapper.find(null, slug, UserContext.getUser());
         if (series == null) throw new BadRequestException("专栏不存在或尚未发布");
         if (series.isBlocked()) throw new ForbiddenException("此专栏已被运营屏蔽，暂时无法访问");
-        series.setEpisodes(mapper.episodes(series.getCourseId()));
         access(series);
         if (!series.isAvailable() && !series.isOwned() && !series.isCreatorOwned()) {
             throw new ForbiddenException("专栏暂未公开，仅已有权益的读者可以访问");
         }
-        List<Long> articleIds = mapper.articleIds(series.getId(), "published");
+        PublicSeriesDetail content = seriesContent(series);
+        series.setEpisodes(content.getEpisodes());
+        List<Long> articleIds = content.getArticleIds();
         if (!articleIds.isEmpty()) series.setArticles(articleLinks(articleIds, false));
         if (!series.isAvailable()) series.getEpisodes().forEach(episode -> episode.setPreview(false));
         if (series.isCreatorOwned()) series.getEpisodes().forEach(episode -> episode.setPreview(true));
@@ -121,6 +127,40 @@ public class StudioService {
             }
         }
         return series;
+    }
+
+    private PublicSeriesDetail seriesContent(StudioView.Series series) {
+        if (publicCache == null || !series.isAvailable()) return loadSeriesContent(series);
+        Long revision = mapper.publicRevision(series.getId());
+        if (revision == null) return loadSeriesContent(series);
+        return publicCache.load(seriesCacheKey(series.getSlug()) + ":" + revision,
+                PublicSeriesDetail.class, () -> loadSeriesContent(series));
+    }
+
+    private PublicSeriesDetail loadSeriesContent(StudioView.Series series) {
+        PublicSeriesDetail result = new PublicSeriesDetail();
+        result.setEpisodes(mapper.episodes(series.getCourseId()));
+        result.setArticleIds(mapper.articleIds(series.getId(), "published"));
+        return result;
+    }
+
+    private String seriesCacheKey(String slug) { return "series:" + slug.toLowerCase(Locale.ROOT); }
+
+    private Long revision(StudioView.Series series) {
+        return publicCache == null ? null : mapper.publicRevision(series.getId());
+    }
+
+    private void invalidate(StudioView.Series series, Long revision) {
+        if (publicCache != null) {
+            String key = seriesCacheKey(series.getSlug());
+            publicCache.evictAfterCommit(key, revision == null ? null : key + ":" + revision);
+        }
+    }
+
+    @Data
+    public static class PublicSeriesDetail {
+        private List<StudioView.Episode> episodes;
+        private List<Long> articleIds;
     }
 
     public List<StudioView.Series> relatedSeries(Long article) {
@@ -295,9 +335,11 @@ public class StudioService {
             return;
         }
         courseDraftService.prepareCreatorRevision(series.getCourseId());
+        Long revision = revision(series);
         mapper.clearArticles(id, "draft");
         mapper.copyArticles(id, "published", "draft");
         if (mapper.beginRevision(id, user, JsonUtils.toJsonStr(revisionForm(series))) != 1) throw new DbException("修订稿创建失败");
+        invalidate(series, revision);
     }
 
     @Transactional
@@ -310,7 +352,9 @@ public class StudioService {
                 || ("published".equals(state) && "unlisted".equals(series.getStatus()))
                 || ("archived".equals(state) && "draft".equals(series.getStatus()) && !series.isPreviouslyPublished());
         if (!allowed) throw new BadRequestException("当前状态不支持此操作");
+        Long revision = revision(series);
         if (mapper.changeState(id, user, state) != 1) throw new DbException("专栏状态更新失败");
+        invalidate(series, revision);
     }
 
     @Transactional
@@ -318,8 +362,11 @@ public class StudioService {
         if (!Objects.equals(userClient.queryUserType(requireUser()), UserType.STAFF.getValue())) {
             throw new ForbiddenException("需要运营人员权限");
         }
-        if (mapper.lockSeries(id, null) == null) throw new BadRequestException("专栏不存在");
+        StudioView.Series series = mapper.lockSeries(id, null);
+        if (series == null) throw new BadRequestException("专栏不存在");
+        Long revision = revision(series);
         mapper.setBlocked(id, blocked);
+        invalidate(series, revision);
     }
 
     @Transactional
@@ -407,9 +454,11 @@ public class StudioService {
                     .notIn(CourseCatalogue::getId, activeIds).set(CourseCatalogue::getDeleted, 1).update();
         }
         courseDraftService.publishCreatorDraft(courseId);
+        Long revision = revision(series);
         if (mapper.publishDraft(id, revisionForm(series), series.getUnlockPoints()) != 1) throw new DbException("专栏发布失败，请重试");
         mapper.clearArticles(id, "published");
         mapper.copyArticles(id, "draft", "published");
+        invalidate(series, revision);
         return series.getSlug();
     }
 
@@ -506,7 +555,9 @@ public class StudioService {
         if (owner == null || series == null || !owner.getId().equals(series.getCreatorId()))
             throw new ForbiddenException("只能编辑自己的专栏");
         if (series.isBlocked() || !series.isAvailable()) throw new BadRequestException("请在可编辑的草稿中保存修改");
+        Long revision = revision(series);
         mapper.updateSeries(id, userId, edit, null);
+        invalidate(series, revision);
     }
 
     @Transactional

@@ -9,6 +9,17 @@ import com.learntrail.api.dto.remark.ContentStatsDTO;
 import java.util.List;
 
 public interface StudioArticleMapper extends BaseMapper<StudioArticle> {
+    @Select("SELECT public_revision FROM learntrail_article WHERE id=#{id}")
+    Long publicRevision(Long id);
+
+    @Select("SELECT id,slug,title,summary,content_format,source_type,source_author,source_url,license_note," +
+            "author_user_id,status,liked_times,view_times,created_at,updated_at,published_at,public_revision " +
+            "FROM learntrail_article WHERE slug=#{slug} AND status='published'")
+    StudioArticle publishedMetadata(String slug);
+
+    @Select("SELECT body FROM learntrail_article WHERE id=#{id} AND public_revision=#{revision} AND status='published'")
+    String publishedBody(@Param("id") Long id, @Param("revision") Long revision);
+
     @Update("UPDATE learntrail_article SET liked_times=#{likedTimes},view_times=#{viewTimes},stat_version=#{version},updated_at=updated_at " +
             "WHERE id=#{bizId} AND stat_version<#{version}")
     int updateContentStats(ContentStatsDTO snapshot);

@@ -2,6 +2,7 @@ package com.learntrail.common.autoconfigure.redisson;
 
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.StrUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.learntrail.common.autoconfigure.redisson.aspect.LockAspect;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.Redisson;
@@ -9,6 +10,7 @@ import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -84,6 +86,12 @@ public class RedissonConfig {
     @ConditionalOnMissingBean
     public LockAspect lockAspect(RedissonClient redissonClient){
         return new LockAspect(redissonClient);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "learntrail.content.public-cache.enabled", havingValue = "true")
+    public PublicContentCache publicContentCache(RedissonClient redissonClient, ObjectMapper objectMapper) {
+        return new PublicContentCache(redissonClient, objectMapper);
     }
 
 }

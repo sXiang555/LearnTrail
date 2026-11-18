@@ -3,6 +3,9 @@ server:
   tomcat:
     uri-encoding: UTF-8   #服务编码
 spring:
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
   servlet:
     multipart:
       max-file-size: 100MB
@@ -25,6 +28,8 @@ spring:
           - data-id: shared-mybatis.yaml # 共享mybatis配置
             refresh: false
           - data-id: shared-feign.yaml # 共享feign配置
+            refresh: false
+          - data-id: shared-mq.yaml
             refresh: false
 tj:
   mq:
@@ -71,3 +76,14 @@ learntrail:
   media:
     local-directory: "${LEARNTRAIL_LOCAL_VIDEO_DIR:}"
     ffmpeg: "${LEARNTRAIL_FFMPEG:ffmpeg}"
+    ffprobe: "${LEARNTRAIL_FFPROBE:ffprobe}"
+    upload:
+      enabled: "${LEARNTRAIL_MULTIPART_ENABLED:false}"
+      endpoint: "${LEARNTRAIL_MINIO_ENDPOINT:}"
+      public-endpoint: "${LEARNTRAIL_MINIO_PUBLIC_ENDPOINT:}"
+      access-key: "${LEARNTRAIL_MINIO_ACCESS_KEY:}"
+      secret-key: "${LEARNTRAIL_MINIO_SECRET_KEY:}"
+      bucket: "${LEARNTRAIL_MINIO_BUCKET:learntrail-media}"
+      max-file-bytes: "${LEARNTRAIL_UPLOAD_MAX_BYTES:1073741824}"
+      part-bytes: "${LEARNTRAIL_UPLOAD_PART_BYTES:8388608}"
+      temporary-directory: "${LEARNTRAIL_MEDIA_TEMP_DIR:${java.io.tmpdir}/learntrail-media}"

@@ -9,6 +9,7 @@ import com.learntrail.api.client.user.UserClient;
 import com.learntrail.api.dto.user.UserDTO;
 import com.learntrail.api.dto.learning.StudioArticleLinkDTO;
 import com.learntrail.common.domain.dto.PageDTO;
+import com.learntrail.common.autoconfigure.redisson.PublicContentCache;
 import com.learntrail.common.enums.UserType;
 import com.learntrail.common.exceptions.BadRequestException;
 import com.learntrail.common.exceptions.ForbiddenException;
@@ -17,6 +18,7 @@ import com.learntrail.common.utils.UserContext;
 import com.learntrail.learning.domain.po.StudioArticle;
 import com.learntrail.learning.mapper.StudioArticleMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
@@ -32,6 +34,8 @@ public class StudioArticleService {
     private final StudioArticleMapper mapper;
     private final UserClient users;
     private final CourseClient courses;
+    @Autowired(required = false)
+    private PublicContentCache publicCache;
 
     public List<StudioArticleLinkDTO> links(List<Long> ids, boolean owned) {
         if (ids == null || ids.isEmpty() || ids.size() > 20 || ids.stream().anyMatch(id -> id == null || id <= 0)) {
@@ -100,11 +104,41 @@ public class StudioArticleService {
 
     public StudioArticle published(String slug) {
         Long user = UserContext.getUser();
-        StudioArticle article = mapper.selectOne(Wrappers.<StudioArticle>lambdaQuery()
-                .eq(StudioArticle::getSlug, slug).eq(StudioArticle::getStatus, "published"));
+        StudioArticle article = publicCache == null ? readPublished(slug) : readCachedPublished(slug);
         if (article == null) throw new BadRequestException("文章不存在或尚未发布");
         enrich(List.of(article), user);
         return article;
+    }
+
+    private StudioArticle readPublished(String slug) {
+        return mapper.selectOne(Wrappers.<StudioArticle>lambdaQuery()
+                .eq(StudioArticle::getSlug, slug).eq(StudioArticle::getStatus, "published"));
+    }
+
+    private StudioArticle readCachedPublished(String slug) {
+        String key = articleCacheKey(slug);
+        if (publicCache.knownMissing(key)) return null;
+        StudioArticle article = mapper.publishedMetadata(slug);
+        if (article == null) {
+            publicCache.markMissing(key);
+            return null;
+        }
+        Long revision = article.getPublicRevision();
+        if (revision == null) return readPublished(slug);
+        String body = publicCache.load(key + ":" + revision, String.class,
+                () -> mapper.publishedBody(article.getId(), revision));
+        if (body == null) return readPublished(slug);
+        article.setBody(body);
+        return article;
+    }
+
+    private String articleCacheKey(String slug) { return "article:" + slug.toLowerCase(Locale.ROOT); }
+
+    private void invalidate(StudioArticle article, Long revision) {
+        if (publicCache != null) {
+            String key = articleCacheKey(article.getSlug());
+            publicCache.evictAfterCommit(key, revision == null ? null : key + ":" + revision);
+        }
     }
 
     public Map<Long, Long> publishedCounts() {
@@ -138,9 +172,11 @@ public class StudioArticleService {
     public void edit(Long id, StudioArticle.Edit edit) {
         StudioArticle article = mapper.lock(id);
         checkEditable(article, requireUser());
+        Long revision = publicCache == null ? null : mapper.publicRevision(id);
         apply(article, edit);
         article.setUpdatedAt(LocalDateTime.now());
         if (mapper.updateById(article) != 1) throw new IllegalStateException("文章保存失败");
+        invalidate(article, revision);
     }
 
     @Transactional
@@ -150,10 +186,12 @@ public class StudioArticleService {
         StudioArticle article = mapper.lock(id);
         checkEditable(article, user);
         if ("blocked".equals(status)) requireOperator(user);
+        Long revision = publicCache == null ? null : mapper.publicRevision(id);
         article.setStatus(status);
         article.setUpdatedAt(LocalDateTime.now());
         if ("published".equals(status)) article.setPublishedAt(LocalDateTime.now());
         if (mapper.updateById(article) != 1) throw new IllegalStateException("文章状态更新失败");
+        invalidate(article, revision);
     }
 
     private void checkEditable(StudioArticle article, Long user) {

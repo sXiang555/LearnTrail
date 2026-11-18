@@ -14,6 +14,9 @@ import java.util.Map;
 
 @Mapper
 public interface StudioMapper {
+    @Select("SELECT public_revision FROM learntrail_series WHERE id=#{id}")
+    Long publicRevision(Long id);
+
     @Update("UPDATE learntrail_series SET liked_times=#{likedTimes},view_times=#{viewTimes},stat_version=#{version},updated_at=updated_at " +
             "WHERE id=#{bizId} AND stat_version<#{version}")
     int updateContentStats(ContentStatsDTO snapshot);

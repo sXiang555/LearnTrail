@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { api, notify, studioApi, timestamp } from '../api'
 import RelatedArticlePicker from './RelatedArticlePicker.vue'
+import { useVideoUpload } from '../useVideoUpload'
 
 const props = defineProps({ seriesId: { type: [String, Number], default: null } })
 const emit = defineEmits(['saved', 'published', 'close'])
@@ -20,8 +21,18 @@ const fileInput = ref(null)
 const replaceIndex = ref(null)
 const workspace = studioApi + '/workspace'
 const draftPath = computed(() => workspace + '/series/' + id.value)
+const { capabilities, state: uploadState, loadCapabilities, upload: uploadVideo, pause } = useVideoUpload()
+const uploadLimit = computed(() => capabilities.value?.enabled
+  ? Number(capabilities.value.maxFileBytes) / 1024 ** 2 : 100)
+const uploadLabels = {
+  CHECKING: '正在检查视频', HASHING: '正在校验文件', INITIATING: '正在建立上传会话',
+  UPLOADING: '正在上传分片', LEGACY: '正在上传视频', COMPLETING: '正在合并分片',
+  VERIFYING: '视频等待处理', PROCESSING: '正在转码并生成试看'
+}
+const showUploadProgress = computed(() => ['HASHING', 'UPLOADING'].includes(uploadState.value?.phase))
 
 onMounted(async () => {
+  loadCapabilities().catch(() => {})
   try {
     const [options, draft] = await Promise.all([
       api(workspace + '/categories'),
@@ -81,9 +92,10 @@ function upload(event) {
   if (!file) return
   const index = replaceIndex.value
   perform('upload', async () => {
-    const body = new FormData()
-    body.append('file', file)
-    const asset = await api('/ms/medias/studio/upload', { method: 'POST', body })
+    const asset = await uploadVideo(file)
+    if (episodes.value.some((episode, position) => position !== index && String(episode.mediaId) === String(asset.id))) {
+      throw new Error('此视频已在当前专栏的分集中')
+    }
     const name = file.name.replace(/\.mp4$/i, '').slice(0, 100) || '未命名分集'
     const episode = { mediaId: asset.id, title: name, filename: asset.filename, duration: asset.duration }
     if (index === null) {
@@ -182,7 +194,7 @@ function publish() {
       </form>
       <section v-if="id" class="draft-episodes">
         <h3>2. 视频分集与试看</h3>
-        <p class="content-tip">每集上传一个 MP4 文件，最大 100 MB。可在发布前更换视频或调整顺序。</p>
+        <p class="content-tip">每集上传一个 MP4 文件，最大 {{ uploadLimit }} MiB。<template v-if="capabilities?.enabled">中断后重新选择同一文件即可继续。</template></p>
         <input ref="fileInput" type="file" accept="video/mp4,.mp4" hidden @change="upload" />
         <ol class="episode-editor-list">
           <li v-for="(episode, index) in episodes" :key="episode.mediaId">
@@ -201,6 +213,11 @@ function publish() {
         <button type="button" class="btn light" :disabled="!!busy || episodes.length >= 30" @click="chooseVideo()">
           {{ busy === 'upload' ? '正在上传…' : '上传视频' }}
         </button>
+        <div v-if="uploadState" class="content-tip">
+          <p role="status">{{ uploadLabels[uploadState.phase] || '正在查询处理状态' }}</p>
+          <progress v-if="showUploadProgress" :value="uploadState.loaded" :max="uploadState.total" aria-label="视频上传进度" />
+          <button v-if="capabilities?.enabled" type="button" class="btn light" @click="pause">暂停等待</button>
+        </div>
         <div v-if="episodes.length && Number(form.unlockPoints) > 0" class="field-grid preview-fields">
           <label class="field">试看分集
             <select v-model="previewMediaId" :disabled="!!busy">

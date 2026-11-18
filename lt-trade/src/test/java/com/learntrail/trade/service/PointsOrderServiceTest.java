@@ -59,6 +59,38 @@ class PointsOrderServiceTest {
     @Test void repeatedPaidOrderDoesNotCallWalletAgain() {
         order.setPhase("PAID"); service.pay(5L); verifyNoInteractions(wallet, coupons);
     }
+    @Test void recoveryFinishesCapturedOrderWithoutReservingOrDebitingAgain() {
+        when(wallet.receipt(5L)).thenReturn(receipt("CAPTURED", 80));
+        service.resume(order);
+        InOrder calls = inOrder(wallet, coupons, store);
+        calls.verify(wallet).receipt(5L);
+        calls.verify(coupons).complete(5L);
+        calls.verify(store).finish(5L, 1L, true);
+        calls.verifyNoMoreInteractions();
+    }
+    @Test void recoveryReleasesCouponAfterReadingCancellationReceipt() {
+        order.setPhase("CANCELLING");
+        when(wallet.receipt(5L)).thenReturn(receipt("CANCELLED", 0));
+        service.resume(order);
+        verify(coupons).release(5L);
+        verify(store).finish(5L, 1L, false);
+        verify(wallet, never()).cancel(5L);
+    }
+    @Test void recoveryLeavesOrderPendingWhenReceiptDoesNotMatch() {
+        when(wallet.receipt(5L)).thenReturn(receipt("CAPTURED", 79));
+        assertThrows(IllegalStateException.class, () -> service.resume(order));
+        verifyNoInteractions(store, coupons);
+    }
+    private PointsTrade.Receipt receipt(String status, int amount) {
+        PointsTrade.Receipt receipt = new PointsTrade.Receipt();
+        receipt.setOrderId(order.getOrderId());
+        receipt.setUserId(order.getUserId());
+        receipt.setKind(order.getKind());
+        receipt.setTargetId(order.getTargetId());
+        receipt.setStatus(status);
+        receipt.setAmount(amount);
+        return receipt;
+    }
     @Test void requestKeyCannotBeReusedForDifferentContent() {
         order.setRequestKey("request-key"); when(mapper.request(1L, "request-key")).thenReturn(order);
         PointsTrade.Create form = new PointsTrade.Create(); form.setRequestKey("request-key"); form.setKind("COURSE"); form.setTargetId(99L);

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import lombok.Data;
 import javax.validation.constraints.NotBlank;
@@ -38,6 +39,9 @@ public class StudioArticle {
     private String authorName;
     @TableField(exist = false)
     private boolean rewarded;
+    @TableField(exist = false)
+    @JsonIgnore
+    private Long publicRevision;
 
     @Data
     public static class AuthorCount {
