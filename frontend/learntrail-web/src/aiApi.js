@@ -70,6 +70,8 @@ export const deleteAiMemory = item => aiJson('/memories/' + encodeURIComponent(i
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const protocolError = () => new AiError('INVALID_STREAM', '流式响应格式异常，请刷新会话确认结果')
+const specialistRoles = ['learning', 'creator', 'operations']
+const agentNodes = ['agent', 'tools', 'skill', 'memory', 'creator', 'operations', 'synthesis']
 
 export async function readAiEvents(response, onEvent, signal) {
   if (response.headers.get('content-type')?.split(';')[0].trim() !== 'text/event-stream' || !response.body) throw protocolError()
@@ -107,7 +109,11 @@ export async function readAiEvents(response, onEvent, signal) {
               typeof payload.name !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(payload.name)) throw protocolError()
           if (event === 'tool_end' && (typeof payload.ok !== 'boolean' || !Number.isSafeInteger(payload.duration_ms) || payload.duration_ms < 0)) throw protocolError()
         } else if (event === 'node') {
-          if (!['agent', 'tools', 'skill', 'memory'].includes(payload.node) || !['running', 'completed'].includes(payload.status)) throw protocolError()
+          if (!agentNodes.includes(payload.node) || !['running', 'completed'].includes(payload.status)) throw protocolError()
+        } else if (event === 'delegation') {
+          if (![...specialistRoles, 'auto', 'collaborate'].includes(payload.assistant) ||
+              !Array.isArray(payload.specialists) || !payload.specialists.length || payload.specialists.length > specialistRoles.length ||
+              payload.specialists.some(role => !specialistRoles.includes(role))) throw protocolError()
         } else if (event === 'skill') {
           if (payload.name != null && (typeof payload.name !== 'string' || !/^[a-z][a-z0-9-]{1,48}$/.test(payload.name))) throw protocolError()
         } else if (event === 'memory') {
@@ -160,7 +166,12 @@ export async function streamAiChat(id, content, onEvent, signal, options = {}) {
   const suffix = options.resumeRunId ? '/agent/runs/' + encodeURIComponent(options.resumeRunId) + '/resume/stream' :
     options.mode === 'agent' ? '/agent/stream' : '/chat/stream'
   const body = options.resumeRunId ? {} : options.mode === 'agent' ?
-    { content, pause_before_tools: options.pauseBeforeTools === true, ...(options.skill ? { skill: options.skill } : {}) } : { content }
+    {
+      content,
+      pause_before_tools: options.pauseBeforeTools === true,
+      ...(options.assistant ? { assistant: options.assistant } : {}),
+      ...(options.skill ? { skill: options.skill } : {})
+    } : { content }
   const response = await aiFetch('/sessions/' + encodeURIComponent(id) + suffix, {
     method: 'POST', body, signal
   })

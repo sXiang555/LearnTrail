@@ -20,7 +20,9 @@ from learntrail_agent.agent.learntrail_tools import LearnTrailTools
 from learntrail_agent.agent.schemas import AgentChatRequest
 from learntrail_agent.agent.skills import SkillCatalog
 from learntrail_agent.agent.tools import Tool, ToolContext, ToolOutput, ToolExecutor
-from learntrail_agent.clients.java import JavaArticleClient, ArticleUnavailable, AuthorizedArticle, PublishedArticle, ArticlePage
+from learntrail_agent.clients.java import (
+    ArticlePage, ArticleUnavailable, AuthorizedArticle, FullTextArticlePage, JavaArticleClient, PublishedArticle,
+)
 from learntrail_agent.clients.learning import JavaLearningClient, LessonPage, CourseProgress
 from learntrail_agent.clients.mcp import MCPClient, MCPProfile, arguments_model
 from learntrail_agent.clients.tool_models import ToolCall, FunctionCall, ToolChatResponse
@@ -130,12 +132,13 @@ class CaseRunner:
         async def get(slug,token):
             if flags['revoked'] or slug not in prepared:raise ArticleUnavailable(uid,slug)
             return prepared[slug]
-        async def search(token,user_id,keyword,page_no,page_size):
+        async def search(token,user_id,keyword,page_no,page_size,*,sort='newest'):
             found=[s.article for s in prepared.values() if not keyword or keyword.casefold() in (s.article.title+s.article.summary).casefold()]
             selected=found[(page_no-1)*page_size:page_no*page_size]
             return ArticlePage.model_validate({'total':len(found),'pages':(len(found)+page_size-1)//page_size,
                 'list':[a.model_dump(by_alias=True) for a in selected]})
         articles.get_published_article.side_effect=get;articles.search_published.side_effect=search
+        articles.search_full_text.return_value=FullTextArticlePage.model_validate({'total':0,'pages':0,'list':[]})
         learning.lessons.return_value=LessonPage.model_validate(p.get('lesson_page',{'total':0,'pages':0,'list':[]}))
         learning.progress.return_value=CourseProgress.model_validate(p['course_progress']) if p.get('course_progress') else None
         retriever=Mock();retriever.indexer=indexer

@@ -11,6 +11,7 @@ from uuid import UUID
 import anyio
 
 from learntrail_agent.agent.learntrail_tools import LearnTrailTools
+from learntrail_agent.agent.assistants import Assistant, delegate
 from learntrail_agent.agent.loop import AgentLoop, AgentState
 from learntrail_agent.agent.schemas import AgentChatRequest, AgentChatResponse
 from learntrail_agent.agent.advanced_models import is_memory_request
@@ -27,6 +28,7 @@ from learntrail_agent.observability import observed
 
 logger = logging.getLogger(__name__)
 REDACTED = "此 Agent 回答的来源或学习状态已变化，或暂时无法核验，请重新查询。"
+OPERATOR_EVIDENCE = {"kind": "operator_access"}
 
 
 @dataclass
@@ -47,6 +49,7 @@ class PreparedAgent:
     stream_tokens: bool = False
     history_citations: list[dict] = field(default_factory=list)
     capabilities: Any = None
+    assistant: Assistant = "learning"
 
 
 class AgentService:
@@ -64,8 +67,22 @@ class AgentService:
             max_tokens=settings.agent_max_tokens,thinking=thinking,prompt_suffix=settings.agent_prompt_suffix)
 
     async def _context(self, token: str, session_id: UUID | None = None, run_id: UUID | None = None) -> ToolContext:
-        context=await self.tools.context(token,session_id,run_id)
-        return self.advanced.context(context) if self.advanced else context
+        context = await self.tools.context(token, session_id, run_id)
+        if self.advanced:
+            context = self.advanced.context(context)
+        is_operator: bool | None = None
+
+        async def verify_sources(evidence: list[dict[str, object]]) -> None:
+            nonlocal is_operator
+            if OPERATOR_EVIDENCE in evidence:
+                if is_operator is None:
+                    is_operator = await self.tools.articles.can_operate(token, context.user_id)
+                if not is_operator:
+                    raise AppError("OPERATIONS_FORBIDDEN", "需要运营人员权限。", 403)
+                evidence = [item for item in evidence if item != OPERATOR_EVIDENCE]
+            await context.verify_sources(evidence)
+
+        return replace(context, verify_sources=verify_sources)
 
     def _saver(self, context: ToolContext) -> SessionCheckpointer | None:
         if self.checkpointer is None:
@@ -104,12 +121,16 @@ class AgentService:
         snapshot=await self.loop.snapshot(context,saver)
         if not snapshot.values or snapshot.values.get("run_id")!=str(run_id):
             raise AppError("GRAPH_RUN_SUPERSEDED","此任务没有当前可恢复状态，或已被后续执行替代。",409)
+        specialists = snapshot.values.get("specialists") or ["learning"]
+        if "operations" in specialists:
+            await context.verify_sources([OPERATOR_EVIDENCE])
         output={"run_id":str(run_id),"thread_id":thread_id(session_id),"checkpoint_ns":"",
             "checkpoint_id":snapshot.config["configurable"]["checkpoint_id"],"next":list(snapshot.next),
             "status":run.status,"model_calls":snapshot.values.get("model_calls",0),
             "tool_calls":snapshot.values.get("tool_calls",0)}
         output["skill"]={k:v for k,v in (snapshot.values.get("skill") or {}).items() if k!="guide"} or None
         output["memory_count"]=len(snapshot.values.get("long_term_memory",[]))
+        output["specialists"]=specialists
         try:
             await context.verify_sources(run.agent_data.get("evidence",[])+snapshot.values.get("evidence",[]))
         except AppError as error:
@@ -131,14 +152,18 @@ class AgentService:
         snapshot=await self.loop.snapshot(context,saver)
         if not snapshot.values or snapshot.values.get("run_id")!=str(run_id):
             raise AppError("GRAPH_RUN_SUPERSEDED","此任务没有当前可恢复状态，或已被后续执行替代。",409)
+        specialists = snapshot.values.get("specialists") or ["learning"]
+        if "operations" in specialists:
+            await context.verify_sources([OPERATOR_EVIDENCE])
         await self.loop._verify(context,run.agent_data.get("evidence",[])+snapshot.values.get("evidence",[]))
         capabilities=None
         if self.advanced:
             approvals=await self.advanced.approvals.list(user_id,session_id,run_id)
             if any(a["status"]=="pending" for a in approvals):
                 raise AppError("APPROVAL_REQUIRED","请先处理本人待审批操作。",409)
-            capabilities=await self.advanced.bind(self.loop.registry,context,"",snapshot.values.get("requested_skill"))
-            await capabilities.restore(snapshot.values)
+            if "learning" in specialists:
+                capabilities=await self.advanced.bind(self.loop.registry,context,"",snapshot.values.get("requested_skill"))
+                await capabilities.restore(snapshot.values)
         remaining=self.settings.agent_timeout_seconds-(run.duration_ms or 0)/1000
         if remaining<=0:
             raise AppError("AGENT_TIMEOUT","此任务已用尽运行时间，请重新提问。",504)
@@ -153,7 +178,8 @@ class AgentService:
         claimed,content=await self.traces.resume(user_id,session_id,run_id,remaining+60)
         if capabilities:capabilities.question=content
         return PreparedAgent(claimed,context,content,[],state,started-(run.duration_ms or 0)/1000,
-            started+remaining,checkpointer=saver,resume=True,capabilities=capabilities)
+            started+remaining,checkpointer=saver,resume=True,capabilities=capabilities,
+            assistant=snapshot.values.get("assistant", "learning"))
 
     async def _safe_history(self, context: ToolContext, session_id: UUID, question: str) -> tuple[list[tuple[str,str]],list[dict],list[dict]]:
         turns = await self.sessions.agent_history(context.user_id,session_id,self.settings.context_max_turns)
@@ -184,17 +210,23 @@ class AgentService:
                 context = await self._context(token,session_id)
                 if context.user_id != user_id:
                     raise AppError("INVALID_TOKEN","登录身份不一致。",401)
+                specialists = delegate(body.assistant, body.content)
+                if "operations" in specialists:
+                    await context.verify_sources([OPERATOR_EVIDENCE])
                 lease = self.settings.agent_timeout_seconds+30+8*self.settings.database_statement_timeout_ms/1000+4*self.settings.database_timeout_seconds
                 run = await self.sessions.start_run(user_id,session_id,body.content,self.settings.llm_model,lease,kind="agent")
                 context = replace(context,session_id=session_id,run_id=run.id)
                 capabilities=None
                 if self.advanced:
                     await self.advanced.approvals.cancel_superseded(user_id,session_id,run.id)
-                    capabilities=await self.advanced.bind(self.loop.registry,context,body.content,body.skill)
+                    if "learning" in specialists:
+                        capabilities=await self.advanced.bind(self.loop.registry,context,body.content,body.skill)
                 history,evidence,citations = await self._safe_history(context,session_id,body.content)
+                if "operations" in specialists and OPERATOR_EVIDENCE not in evidence:
+                    evidence.append(OPERATOR_EVIDENCE)
                 return PreparedAgent(run,context,body.content,history,AgentState(evidence=evidence),started,deadline,
                     checkpointer=self._saver(context),pause_before_tools=body.pause_before_tools,history_citations=citations,
-                    capabilities=capabilities)
+                    capabilities=capabilities,assistant=body.assistant)
         except BaseException as error:
             public = AppError("AGENT_TIMEOUT","Agent 准备阶段超时。",504,True) if isinstance(error,TimeoutError) else error
             if run is not None:
@@ -228,7 +260,8 @@ class AgentService:
                 result = await self.control.while_active(self.loop.run(prepared.content,context,state,emit,
                     history=prepared.history,write_trace=write,checkpointer=prepared.checkpointer,
                     resume=prepared.resume,pause_before_tools=prepared.pause_before_tools,
-                    stream_tokens=prepared.stream_tokens,capabilities=prepared.capabilities),watcher)
+                    stream_tokens=prepared.stream_tokens,capabilities=prepared.capabilities,
+                    assistant=prepared.assistant),watcher)
                 duration = max(0,int((time.monotonic()-prepared.started_at)*1000))
                 checkpoint = {"thread_id":thread_id(context.session_id),"checkpoint_id":result.checkpoint_id,
                               "checkpoint_ns":""} if result.checkpoint_id else None
@@ -276,12 +309,9 @@ class AgentService:
     async def stream(self, prepared: PreparedAgent, disconnected: Callable[[],Awaitable[bool]]) -> AsyncIterator[tuple[str,dict]]:
         prepared.started=True
         prepared.stream_tokens=True
-        queue: asyncio.Queue[tuple[str,dict]] = asyncio.Queue(maxsize=64)
+        queue: asyncio.Queue[tuple[str,dict]] = asyncio.Queue(maxsize=256)
         async def emit(kind: str, data: dict) -> None:
-            try:
-                queue.put_nowait((kind,data))
-            except asyncio.QueueFull:
-                raise AppError("AGENT_CLIENT_TOO_SLOW","客户端接收过慢，请重新查询。",503,True) from None
+            await queue.put((kind,data))
         worker = asyncio.create_task(self.execute(prepared,emit,disconnected))
         try:
             yield "meta", {"run_id":str(prepared.run.id),"session_id":str(prepared.context.session_id),
@@ -336,6 +366,9 @@ class AgentService:
         context=await self._context(token)
         if context.user_id!=user_id:
             raise AppError("INVALID_TOKEN","登录身份不一致。",401)
+        if any(event["kind"] == "delegation" and "operations" in event["payload"].get("specialists", [])
+               for event in events):
+            await context.verify_sources([OPERATOR_EVIDENCE])
         try:
             await context.verify_sources(run.agent_data.get("evidence",[]))
         except AppError as error:

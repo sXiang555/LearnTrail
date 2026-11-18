@@ -1,6 +1,8 @@
 """Agent HTTP boundary tests; SQL and Java/model traffic are explicit doubles."""
 
+import asyncio
 import json
+from contextlib import aclosing
 from unittest.mock import AsyncMock
 from types import SimpleNamespace
 from uuid import uuid4
@@ -79,6 +81,112 @@ async def test_agent_api_passes_controlled_tool_error_back_to_model(api_client, 
 
 
 @pytest.mark.asyncio
+async def test_auto_delegates_article_ranking_to_operations_and_outline_to_creator(
+    api_client, authenticated, agent_api, repository, respx_mock,
+):
+    access = respx_mock.get("https://java.example.test/ls/studio-articles/access").respond(
+        200, json={"code": 200, "data": {"operator": True, "creator": False}},
+    )
+    first = completion("")
+    first["choices"][0]["finish_reason"] = "tool_calls"
+    first["choices"][0]["message"]["tool_calls"] = [{
+        "id": "ranking", "type": "function",
+        "function": {"name": "search_articles", "arguments": '{"sort":"views","keyword":"事务","page_size":1}'},
+    }]
+    article = {"id": "42", "slug": "transactions", "title": "事务基础", "summary": "理解事务",
+               "status": "published", "likedTimes": "12", "viewTimes": "123"}
+    rank = respx_mock.get("https://java.example.test/ls/studio-articles/published").respond(
+        200, json={"code": 200, "data": {"list": [article], "total": "1", "pages": "1"}},
+    )
+    respx_mock.get("https://java.example.test/ls/studio-articles/published/transactions").respond(
+        200, json={"code": 200, "data": {**article, "body": "事务基础资料", "contentFormat": "text",
+                                       "sourceType": "original"}},
+    )
+    model = respx_mock.post("https://model.example.test/v1/chat/completions").mock(side_effect=[
+        httpx.Response(200, json=first),
+        httpx.Response(200, json=completion("事务基础有 123 次阅读和 12 次点赞。")),
+        httpx.Response(200, json=completion("大纲包含隔离级别和应用示例。")),
+        httpx.Response(200, json=completion("参考《事务基础》的公开数据，建议先讲隔离级别。")),
+    ])
+
+    response = await api_client.post(
+        f"/v1/sessions/{uuid4()}/agent", headers=authenticated,
+        json={"assistant": "auto", "content": "查事务文章的阅读量排行，再写一份大纲"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert access.call_count == 1
+    assert response.json()["model_calls"] == 4
+    assert response.json()["citations"][0]["slug"] == "transactions"
+    assert dict(rank.calls.last.request.url.params) == {
+        "pageNo": "1", "pageSize": "1", "q": "事务", "sort": "views",
+    }
+    operations, ranked, creator, synthesis = [json.loads(item.request.content) for item in model.calls]
+    assert "运营助手" in operations["messages"][0]["content"]
+    assert {tool["function"]["name"] for tool in operations["tools"]} == {
+        "search_articles", "search_knowledge_base",
+    }
+    result = json.loads(ranked["messages"][-1]["content"])["data"]
+    assert (result["articles"][0]["views"], result["articles"][0]["likes"]) == (123, 12)
+    assert "as_of" in result
+    assert "创作者助手" in creator["messages"][0]["content"]
+    assert "123 次阅读" in creator["messages"][1]["content"]
+    assert "大纲包含隔离级别" in synthesis["messages"][1]["content"]
+    assert "tools" not in synthesis and "tool_choice" not in synthesis
+    repository.complete_run.assert_awaited_once()
+    events = [item.args[-2] for item in agent_api.append.await_args_list]
+    assert next(item["payload"]["specialists"] for item in events if item["kind"] == "delegation") == [
+        "operations", "creator",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("assistant", "endpoint"), [
+    ("operations", "/agent"), ("collaborate", "/agent/stream"), ("auto", "/agent/stream"),
+])
+async def test_agent_rejects_nonstaff_operations_paths_before_starting_run(
+    api_client, authenticated, agent_api, repository, respx_mock, assistant, endpoint,
+):
+    access = respx_mock.get("https://java.example.test/ls/studio-articles/access").respond(
+        200, json={"code": 200, "data": {"operator": False, "creator": True}},
+    )
+    model = respx_mock.post("https://model.example.test/v1/chat/completions")
+
+    response = await api_client.post(f"/v1/sessions/{uuid4()}{endpoint}", headers=authenticated,
+                                     json={"assistant": assistant, "content": "查文章的阅读量排行，再写一份大纲"})
+
+    assert response.status_code == 403, response.text
+    assert response.json()["error"]["code"] == "OPERATIONS_FORBIDDEN"
+    assert access.call_count == 1
+    repository.start_run.assert_not_awaited()
+    assert not model.called
+
+
+@pytest.mark.asyncio
+async def test_creator_cannot_execute_a_learning_tool_even_if_model_requests_it(
+    api_client, authenticated, agent_api, respx_mock,
+):
+    first = completion("")
+    first["choices"][0]["finish_reason"] = "tool_calls"
+    first["choices"][0]["message"]["tool_calls"] = [{
+        "id": "wrong-tool", "type": "function",
+        "function": {"name": "get_learning_progress", "arguments": "{}"},
+    }]
+    model = respx_mock.post("https://model.example.test/v1/chat/completions").mock(side_effect=[
+        httpx.Response(200, json=first), httpx.Response(200, json=completion("这是润色后的段落。")),
+    ])
+    no_progress = respx_mock.get("https://java.example.test/ls/lessons/page")
+
+    response = await api_client.post(f"/v1/sessions/{uuid4()}/agent", headers=authenticated,
+                                     json={"assistant": "creator", "content": "润色这段话：我在学习事务。"})
+
+    assert response.status_code == 200, response.text
+    assert not no_progress.called
+    result = json.loads(model.calls.last.request.content)["messages"][-1]["content"]
+    assert json.loads(result)["error"]["code"] == "TOOL_FORBIDDEN"
+
+
+@pytest.mark.asyncio
 async def test_agent_sse_model_failure_is_error_without_success_commit(api_client, authenticated, agent_api, repository, respx_mock):
     respx_mock.post("https://model.example.test/v1/chat/completions").respond(429, json={"error": "PRIVATE-UPSTREAM"})
     response = await api_client.post(f"/v1/sessions/{uuid4()}/agent/stream", headers=authenticated, json={"content": "query"})
@@ -87,6 +195,74 @@ async def test_agent_sse_model_failure_is_error_without_success_commit(api_clien
     assert "event: done" not in response.text and "PRIVATE-UPSTREAM" not in response.text
     repository.complete_run.assert_not_called()
     assert repository.fail_run.await_args.args[-1] == "LLM_RATE_LIMITED"
+
+
+@pytest.mark.asyncio
+async def test_agent_sse_delivers_and_stores_entire_buffered_model_reply(
+    api_client, authenticated, agent_api, repository, respx_mock,
+):
+    chunks = [str(index) for index in range(320)]
+    choices = [{"delta": {"content": chunk}, "finish_reason": None} for chunk in chunks]
+    choices.append({"delta": {}, "finish_reason": "stop"})
+    wire = "".join(
+        "data: " + json.dumps({"id": "burst", "model": "test-model", "choices": [
+            {"index": 0, **choice},
+        ]}) + "\n\n"
+        for choice in choices
+    ) + "data: [DONE]\n\n"
+    respx_mock.post("https://model.example.test/v1/chat/completions").respond(
+        200, text=wire, headers={"content-type": "text/event-stream"},
+    )
+
+    response = await api_client.post(
+        f"/v1/sessions/{uuid4()}/agent/stream", headers=authenticated, json={"content": "query"},
+    )
+
+    frames = response.text.strip().split("\n\n")
+    deltas = [json.loads(frame.split("\ndata: ", 1)[1])["content"] for frame in frames if frame.startswith("event: delta\n")]
+    assert response.status_code == 200 and deltas == chunks
+    assert frames[-1].startswith("event: done\n")
+    repository.complete_run.assert_awaited_once()
+    assert repository.complete_run.await_args.args[3].content == "".join(chunks)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("disconnect", [False, True])
+async def test_full_agent_sse_queue_waits_and_can_resume_or_close(disconnect):
+    capacity_reached = asyncio.Event()
+    finished = asyncio.Event()
+    sent = 0
+    chunks = [str(index) for index in range(320)]
+    run = SimpleNamespace(id=uuid4(), user_message_id=uuid4())
+    prepared = SimpleNamespace(run=run, context=SimpleNamespace(session_id=uuid4()), resume=False)
+
+    async def execute(prepared, emit, disconnected):
+        nonlocal sent
+        try:
+            for chunk in chunks:
+                if sent == 256:
+                    capacity_reached.set()
+                await emit("delta", {"content": chunk})
+                sent += 1
+            return SimpleNamespace(run_id=run.id, assistant_message_id=uuid4(), status="succeeded",
+                model="test-model", usage=None, usage_complete=False, model_calls=1, tool_calls=0,
+                citations=[], checkpoint=None, duration_ms=1)
+        finally:
+            finished.set()
+
+    service = SimpleNamespace(execute=execute, abandon=AsyncMock())
+    async with asyncio.timeout(3):
+        async with aclosing(AgentService.stream(service, prepared, AsyncMock(return_value=False))) as stream:
+            assert (await anext(stream))[0] == "meta"
+            await capacity_reached.wait()
+            assert sent == 256 and not finished.is_set()
+            if not disconnect:
+                events = [event async for event in stream]
+                assert [data["content"] for kind, data in events if kind == "delta"] == chunks
+                assert events[-1][0] == "done"
+    assert sent == (256 if disconnect else len(chunks))
+    assert finished.is_set()
+    service.abandon.assert_awaited_once_with(prepared)
 
 
 @pytest.mark.asyncio

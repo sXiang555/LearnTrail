@@ -108,3 +108,45 @@ async def test_knowledge_tool_returns_explicit_insufficient_context_without_inve
     assert result.data["matches"]==[] and result.evidence==[]
     articles.get_published_article.assert_not_called()
     assert retriever.search.await_args.args[0]==41
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("detail_status", "detail_code", "published", "expected", "restricted"), [
+    (403, 403, True, "restricted", 1),
+    (200, 403, False, "no_readable_results", 0),
+    (404, 404, False, "no_readable_results", 0),
+])
+async def test_full_text_only_reports_access_denied_for_still_public_articles(
+    settings, java_key, token_factory, respx_mock, detail_status, detail_code, published, expected, restricted,
+) -> None:
+    respx_mock.get("https://java.example.test/us/users/41/enabled").respond(200, json={"code": 200, "data": True})
+    base = "https://java.example.test"
+    respx_mock.get(base + "/ls/studio-articles/published").respond(200, json={
+        "code": 200, "data": {"total": "0", "pages": "0", "list": []},
+    })
+    reference = {"id": "42", "slug": "possible-match", "title": "不应暴露的标题", "summary": "不应暴露的摘要"}
+    search = respx_mock.get(base + "/ss/content-search").respond(200, json={
+        "code": 200, "data": {"total": "1", "pages": "1", "list": [{**reference, "kind": "article"}]},
+    })
+    respx_mock.get(base + "/ls/studio-articles/published/possible-match").respond(
+        detail_status, json={"code": detail_code, "data": None},
+    )
+    links = respx_mock.get(base + "/ls/studio-articles/published/links").respond(
+        200, json={"code": 200, "data": [reference] if published else []},
+    )
+
+    async with httpx.AsyncClient() as http:
+        domain = LearnTrailTools(JavaArticleClient(http, settings, java_key.public_key()), Mock(), Mock())
+        context = await domain.context(token_factory())
+        call = ToolCall(id="search", function=FunctionCall(name="search_articles", arguments='{"keyword":"Redis"}'))
+        result = await ToolExecutor(domain.registry()).execute(call, context)
+
+    assert result.ok and result.data["status"] == expected
+    assert result.data["restricted_count"] == restricted
+    assert result.data["search_scope"] == "public_full_text"
+    assert result.data["articles"] == [] and result.evidence == []
+    assert "不应暴露" not in result.model_content() and "possible-match" not in result.model_content()
+    assert dict(search.calls.last.request.url.params) == {
+        "q": "Redis", "kind": "article", "pageNo": "1", "pageSize": "5",
+    }
+    assert links.called == (detail_code == 403)

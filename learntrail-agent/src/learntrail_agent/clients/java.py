@@ -7,7 +7,7 @@ from typing import Literal
 
 import httpx
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, TypeAdapter, ValidationError, field_validator
 
 from learntrail_agent.errors import AppError
 from learntrail_agent.security.auth import authenticate_token
@@ -57,22 +57,39 @@ class ArticleUnavailable(AppError):
         self.slug = slug
 
 
+class ArticleAccessDenied(ArticleUnavailable):
+    """Java explicitly denied reading this article."""
+
+
 class JavaEnvelope(BaseModel):
     code: StrictInt
     data: object = None
 
 
-class ArticleSummary(BaseModel):
+ArticleSort = Literal["newest", "likes", "views"]
+
+
+class ArticleReference(BaseModel):
     id: int = Field(gt=0, le=9223372036854775807)
     slug: str = Field(pattern=r"^[a-z0-9-]{1,80}$")
-    title: str = Field(min_length=1, max_length=100)
-    summary: str = Field(default="", max_length=240)
-    status: Literal["published"]
 
     @field_validator("id", mode="before")
     @classmethod
     def java_long(cls, value: object) -> int:
         return PublishedArticle.java_long(value)
+
+
+class ArticleSummary(ArticleReference):
+    title: str = Field(min_length=1, max_length=100)
+    summary: str = Field(default="", max_length=240)
+    status: Literal["published"]
+    liked_times: StrictInt | None = Field(default=None, alias="likedTimes", ge=0, le=9223372036854775807)
+    view_times: StrictInt | None = Field(default=None, alias="viewTimes", ge=0, le=9223372036854775807)
+
+    @field_validator("liked_times", "view_times", mode="before")
+    @classmethod
+    def java_count(cls, value: object) -> int | None:
+        return None if value is None else PublishedArticle.java_long(value)
 
     @field_validator("summary", mode="before")
     @classmethod
@@ -94,12 +111,25 @@ class ArticlePage(JavaPage):
     items: list[ArticleSummary] = Field(alias="list", max_length=30)
 
 
+class FullTextArticle(ArticleReference):
+    kind: Literal["article"]
+
+
+class FullTextArticlePage(JavaPage):
+    items: list[FullTextArticle] = Field(alias="list", max_length=20)
+
+
+class StudioAccess(BaseModel):
+    operator: StrictBool
+
+
 async def read_user_data(
     http: httpx.AsyncClient, settings: Settings, key: RSAPublicKey | None,
     token: str, user_id: int, path: str, params: dict[str, object] | None = None,
 ) -> object:
     """Only source-reviewed, side-effect-free endpoints may use this helper."""
-    if (path not in {"/ls/studio-articles/published", "/ls/lessons/page"}
+    if (path not in {"/ls/studio-articles/published", "/ls/studio-articles/published/links",
+                     "/ls/studio-articles/access", "/ls/lessons/page", "/ss/content-search"}
             and not re.fullmatch(r"/ls/learning-records/course/[0-9]{1,19}", path)):
         raise ValueError("Java read endpoint is not allowed")
     identity = await authenticate_token(token, key, http, settings)
@@ -133,21 +163,55 @@ class JavaArticleClient:
     def __init__(self, http: httpx.AsyncClient, settings: Settings, key: RSAPublicKey | None):
         self.http, self.settings, self.key = http, settings, key
 
+    async def can_operate(self, token: str, user_id: int) -> bool:
+        data = await read_user_data(
+            self.http, self.settings, self.key, token, user_id, "/ls/studio-articles/access",
+        )
+        try:
+            return StudioAccess.model_validate(data).operator
+        except ValidationError:
+            raise AppError("JAVA_READ_INVALID_RESPONSE", "运营权限查询响应格式异常。", 502) from None
+
     @observed("java.article_search")
     async def search_published(
         self, token: str, user_id: int, keyword: str | None, page_no: int, page_size: int,
+        *, sort: ArticleSort = "newest",
     ) -> ArticlePage:
         if not 1 <= page_no <= 100000 or not 1 <= page_size <= 30 or keyword is not None and len(keyword)>80:
             raise AppError("INVALID_TOOL_ARGUMENTS", "文章查询参数超出范围。", 422)
         params: dict[str, object] = {"pageNo":page_no, "pageSize":page_size}
         if keyword:
             params["q"] = keyword
+        if sort != "newest":
+            params["sort"] = sort
         data = await read_user_data(self.http,self.settings,self.key,token,user_id,
                                     "/ls/studio-articles/published",params)
         try:
             return ArticlePage.model_validate(data)
         except ValidationError:
             raise AppError("JAVA_READ_INVALID_RESPONSE", "文章分页响应格式异常。", 502) from None
+
+    async def search_full_text(
+        self, token: str, user_id: int, keyword: str, page_no: int, page_size: int,
+    ) -> FullTextArticlePage:
+        data = await read_user_data(
+            self.http, self.settings, self.key, token, user_id, "/ss/content-search",
+            {"q": keyword, "kind": "article", "pageNo": page_no, "pageSize": page_size},
+        )
+        try:
+            return FullTextArticlePage.model_validate(data)
+        except ValidationError:
+            raise AppError("JAVA_READ_INVALID_RESPONSE", "全文搜索响应格式异常。", 502) from None
+
+    async def published_links(self, token: str, user_id: int, ids: list[int]) -> set[tuple[int, str]]:
+        data = await read_user_data(
+            self.http, self.settings, self.key, token, user_id, "/ls/studio-articles/published/links",
+            {"ids": ",".join(str(article_id) for article_id in ids)},
+        )
+        try:
+            return {(item.id, item.slug) for item in TypeAdapter(list[ArticleReference]).validate_python(data)}
+        except ValidationError:
+            raise AppError("JAVA_READ_INVALID_RESPONSE", "公开文章引用响应格式异常。", 502) from None
 
     @observed("java.article_read")
     async def get_published_article(self, slug: str, token: str) -> AuthorizedArticle:
@@ -162,14 +226,18 @@ class JavaArticleClient:
                 )
                 if response.status_code == 401:
                     raise AppError("INVALID_TOKEN", "Java 服务拒绝了登录凭证。", 401)
-                if response.status_code in {400, 403, 404}:
+                if response.status_code == 403:
+                    raise ArticleAccessDenied(user.user_id, slug)
+                if response.status_code in {400, 404}:
                     raise ArticleUnavailable(user.user_id, slug)
                 if response.status_code != 200:
                     raise AppError("JAVA_ARTICLE_UNAVAILABLE", "文章服务暂不可用。", 503, True)
                 envelope = JavaEnvelope.model_validate(response.json())
                 if envelope.code == 401:
                     raise AppError("INVALID_TOKEN", "Java 服务拒绝了登录凭证。", 401)
-                if envelope.code in {400, 403, 404} or envelope.code == 200 and envelope.data is None:
+                if envelope.code == 403:
+                    raise ArticleAccessDenied(user.user_id, slug)
+                if envelope.code in {400, 404} or envelope.code == 200 and envelope.data is None:
                     raise ArticleUnavailable(user.user_id, slug)
                 if envelope.code != 200:
                     raise AppError("JAVA_ARTICLE_UNAVAILABLE", "文章服务暂不可用。", 503, True)

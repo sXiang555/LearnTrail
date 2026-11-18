@@ -71,7 +71,7 @@ class ToolMessage(BaseModel):
 class ToolChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     messages: list[ToolMessage] = Field(min_length=1, max_length=100)
-    tools: list[ToolDefinition] = Field(min_length=1, max_length=32)
+    tools: list[ToolDefinition] = Field(max_length=32)
     tool_choice: Literal["auto", "none", "required"] | ToolChoice = "auto"
     max_tokens: int | None = Field(default=None, ge=1, le=32768, strict=True)
     temperature: float | None = Field(default=None, ge=0, le=2, allow_inf_nan=False)
@@ -81,6 +81,8 @@ class ToolChatRequest(BaseModel):
     @model_validator(mode="after")
     def validate_protocol(self) -> "ToolChatRequest":
         names = [tool.function.name for tool in self.tools]
+        if not names and self.tool_choice != "none":
+            raise ValueError("A request without tools must disable tool calling")
         if len(names) != len(set(names)):
             raise ValueError("Duplicate tool names")
         if isinstance(self.tool_choice, ToolChoice) and self.tool_choice.function.get("name") not in names:

@@ -42,7 +42,7 @@ function streamResponse(answer, hold = false) {
     if (!hold) controller.close()
   } }), { headers: { 'content-type': 'text/event-stream' } })
 }
-function fixture({ hold = false } = {}) {
+function fixture({ hold = false, reply = hold ? '尚未完成的回答' : '<img src=x onerror=alert(1)>回答' } = {}) {
   let messages = [], runs = [], requestBodies = []
   globalThis.fetch = async (url, options) => {
     if (url.includes('/chat/stream')) {
@@ -50,9 +50,9 @@ function fixture({ hold = false } = {}) {
       requestBodies.push(body)
       const index = messages.length
       messages.push({ id: 'user-' + index, run_id: runId, role: 'user', content: body.content, status: hold ? 'pending' : 'completed', created_at: now })
-      if (!hold) messages.push({ id: 'assistant-' + index, run_id: runId, role: 'assistant', content: '<img src=x onerror=alert(1)>回答', status: 'completed', created_at: now })
+      if (!hold) messages.push({ id: 'assistant-' + index, run_id: runId, role: 'assistant', content: reply, status: 'completed', created_at: now })
       runs = [{ id: runId, status: hold ? 'running' : 'succeeded', duration_ms: 12, usage: { total_tokens: 9 } }]
-      return streamResponse(hold ? '尚未完成的回答' : '<img src=x onerror=alert(1)>回答', hold)
+      return streamResponse(reply, hold)
     }
     if (url.endsWith('/cancel')) {
       runs[0].status = 'cancelled'; messages[0].status = 'failed'
@@ -89,6 +89,31 @@ async function submit(content) {
   document.querySelector('.composer').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
   await flush(); await nextTick()
 }
+
+test('AI 回复流式显示 Markdown，刷新后继续渲染且不加载回复图片', async () => {
+  const reply = '**检索结果**\n\n- 可读文章\n\n```text\nkey\n```\n\n![图](https://example.test/image.png)'
+  fixture({ hold: true, reply })
+  let mounted = await mount()
+  const assertMarkdown = () => {
+    const answer = document.querySelector('.chat-markdown')
+    assert.equal(answer.querySelector('strong').textContent, '检索结果')
+    assert.equal(answer.querySelector('li').textContent, '可读文章')
+    assert.equal(answer.querySelector('pre code').textContent.trim(), 'key')
+    assert.equal(answer.querySelector('img'), null)
+    assert.match(document.querySelector('.chat-message.user p').textContent, /\*\*原始问题\*\*/)
+  }
+  try {
+    await submit('**原始问题**')
+    assertMarkdown()
+    mounted.app.unmount()
+    fixture({ reply })
+    mounted = await mount()
+    await submit('**原始问题**')
+    mounted.app.unmount()
+    mounted = await mount()
+    assertMarkdown()
+  } finally { mounted.app.unmount() }
+})
 
 test('实际 Vue 组件连续发送、显示流式文本、刷新后读取持久化 API 历史', async () => {
   const backend = fixture()
@@ -148,7 +173,7 @@ test('聊天输入 Enter 发送，Shift+Enter 和中文输入法选词不误发�
   } finally { mounted.app.unmount() }
 })
 
-function agentFixture(paused = false) {
+function agentFixture(paused = false, operator = false) {
   const citation = { slug: 'article-test', title: '事务与幂等', ordinal: 0, quote: '<script>不会执行</script>' }
   const events = [
     { kind: 'tool_start', payload: { call_id: 'tool-a', name: 'search_knowledge_base' } },
@@ -160,6 +185,7 @@ function agentFixture(paused = false) {
   const requests = []
   let complete
   globalThis.fetch = async (url, options) => {
+    if (url === '/api/ls/studio-articles/access') return Response.json({ code: 200, data: { operator, creator: true } })
     if (url === '/ai/v1/skills') return Response.json({ items: [{ name: 'knowledge-learning', description: '文章知识学习' }], mcp_servers: [] })
     if (url.includes('/approvals')) return Response.json({ items: [] })
     if (url.endsWith('/agent/stream') || url.endsWith('/resume/stream')) {
@@ -195,23 +221,40 @@ test('Agent 模式实时展示增量、工具状态和引用，刷新恢复已�
   const backend = agentFixture()
   let mounted = await mount()
   try {
-    const radio = document.querySelector('input[value="agent"]')
-    radio.checked = true; radio.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    const assistant = document.querySelector('#ai-assistant')
+    assert.ok(assistant.querySelector('option[value="creator"]'))
+    assert.equal(assistant.querySelector('option[value="operations"]'), null)
+    assert.equal(assistant.querySelector('option[value="collaborate"]'), null)
+    assistant.value = 'learning'; assistant.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
     await nextTick(); await submit('查找知识')
     assert.match(document.body.textContent, /检索结果/)
     assert.doesNotMatch(document.body.textContent, /检索结果如下/)
     assert.match(document.body.textContent, /检索文章知识/)
     assert.match(document.body.textContent, /成功/)
-    assert.deepEqual(backend.requests[0].body, { content: '查找知识', pause_before_tools: false })
+    assert.deepEqual(backend.requests[0].body, { content: '查找知识', pause_before_tools: false, assistant: 'learning' })
     assert.ok(document.querySelector('button[type="button"]').isConnected)
     backend.finish(); await flush(); await nextTick(); await flush()
     assert.match(document.body.textContent, /检索结果如下/)
     assert.match(document.body.textContent, /事务与幂等/)
     assert.equal(document.querySelector('script'), null)
     mounted.app.unmount(); mounted = await mount(); await flush(); await nextTick()
-    assert.equal(document.querySelector('input[value="agent"]').checked, true)
+    assert.equal(document.querySelector('#ai-assistant').value, 'learning')
     assert.match(document.body.textContent, /事务与幂等/)
     assert.match(document.body.textContent, /检索文章知识/)
+  } finally { mounted.app.unmount() }
+})
+
+test('Java 确认运营身份后显示运营与协作入口', async () => {
+  const backend = agentFixture(false, true)
+  const mounted = await mount()
+  try {
+    const assistant = document.querySelector('#ai-assistant')
+    assert.ok(assistant.querySelector('option[value="operations"]'))
+    assert.ok(assistant.querySelector('option[value="collaborate"]'))
+    assistant.value = 'operations'; assistant.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    await nextTick(); await submit('查已发布文章阅读量')
+    assert.equal(backend.requests[0].body.assistant, 'operations')
+    backend.finish(); await flush()
   } finally { mounted.app.unmount() }
 })
 
@@ -263,8 +306,8 @@ test('审批卡片刷新恢复、转义参数、提交哈希后恢复原 Run', a
 test('显式 Skill 仅传名称，技能正文不来自浏览器', async () => {
   const backend = agentFixture(), mounted = await mount()
   try {
-    const radio = document.querySelector('input[value="agent"]')
-    radio.checked = true; radio.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    const assistant = document.querySelector('#ai-assistant')
+    assistant.value = 'learning'; assistant.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
     await nextTick(); await flush(); await nextTick()
     const select = document.querySelector('#agent-skill')
     select.value = 'knowledge-learning'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true }))

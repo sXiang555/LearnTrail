@@ -82,9 +82,10 @@ class LLMClient:
         if stream and self.settings.llm_stream_include_usage:
             payload["stream_options"] = {"include_usage": True}
         if isinstance(request, ToolChatRequest):
-            payload["tools"] = [tool.model_dump() for tool in request.tools]
-            payload["tool_choice"] = (request.tool_choice.model_dump() if isinstance(request.tool_choice, ToolChoice)
-                                      else request.tool_choice)
+            if request.tools:
+                payload["tools"] = [tool.model_dump() for tool in request.tools]
+                payload["tool_choice"] = (request.tool_choice.model_dump() if isinstance(request.tool_choice, ToolChoice)
+                                          else request.tool_choice)
             if request.thinking is not None:
                 payload["thinking"] = {"type": request.thinking}
         return payload

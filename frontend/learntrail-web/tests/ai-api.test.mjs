@@ -75,6 +75,27 @@ test('已经收到增量后断流，不自动重发模型请求', async () => {
   assert.equal(calls, 1)
 })
 
+test('协作模式把助手选项发到 Agent 接口并读取分派、节点与最终回复', async () => {
+  const received = []
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/ai/v1/sessions/' + sessionId + '/agent/stream')
+    assert.deepEqual(JSON.parse(options.body), {
+      content: '先盘点，再写大纲', pause_before_tools: false, assistant: 'collaborate'
+    })
+    return response(meta +
+      event('delegation', { assistant: 'collaborate', specialists: ['operations', 'creator'] }) +
+      event('node', { node: 'operations', status: 'running' }) +
+      event('node', { node: 'creator', status: 'running' }) +
+      event('node', { node: 'synthesis', status: 'running' }) +
+      event('delta', { content: '汇总后的建议' }) + done)
+  }
+  await streamAiChat(sessionId, '先盘点，再写大纲',
+    (kind, data) => received.push([kind, data]), undefined, { mode: 'agent', assistant: 'collaborate' })
+  assert.deepEqual(received.filter(([kind]) => kind === 'node').map(([, data]) => data.node),
+    ['operations', 'creator', 'synthesis'])
+  assert.equal(received.find(([kind]) => kind === 'delta')[1].content, '汇总后的建议')
+})
+
 test('切换用户后丢弃上一用户的会话响应', async () => {
   globalThis.fetch = async () => { session.user = { id: '42' }; return Response.json({ items: [{ id: sessionId }] }) }
   await assert.rejects(listAiSessions(), error => error.code === 'SESSION_CHANGED')

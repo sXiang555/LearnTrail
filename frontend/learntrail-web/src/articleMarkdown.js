@@ -47,7 +47,7 @@ const textOf = inline => (inline.children || []).map(token =>
 const slugOf = text => text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '')
   .trim().replace(/\s+/g, '-').slice(0, 100) || 'section'
 
-export function renderMarkdown(source, ownerWindow, { prefix = 'article', title = '' } = {}) {
+export function renderMarkdown(source, ownerWindow, { prefix = 'article', title = '', images = true } = {}) {
   if (source.length > ARTICLE_LIMIT) throw new Error('正文最多 20 万字符')
   const env = {}
   const tokens = md.parse(source, env)
@@ -79,6 +79,7 @@ export function renderMarkdown(source, ownerWindow, { prefix = 'article', title 
     ADD_URI_SAFE_ATTR: ['target', 'rel', 'loading', 'decoding', 'referrerpolicy', 'start', 'align'],
     ALLOWED_URI_REGEXP: /^(?:https?:\/\/|\/(?!\/)|#)/i,
     ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: images ? [] : ['img'],
     FORBID_ATTR: ['style']
   })
   return { html, toc }

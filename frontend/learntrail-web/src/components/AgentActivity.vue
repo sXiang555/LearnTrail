@@ -20,7 +20,12 @@ const labels = { search_knowledge_base: '检索文章知识', search_articles: '
 const statusLabel = { running: '执行中', succeeded: '成功', failed: '失败', interrupted: '已中断' }
 const tools = computed(() => props.liveRunId && props.liveTools.length ? props.liveTools : savedTools.value)
 const canResume = computed(() => props.run && ['paused', 'failed', 'cancelled'].includes(props.run.status) && snapshot.value && !snapshot.value.redacted)
-const nodeNames = { tools: '正在执行已授权工具…', agent: '正在生成回答…', skill: '正在选择任务技能…', memory: '正在读取相关学习记忆…' }
+const nodeNames = {
+  tools: '正在执行工具…', agent: '学习助手正在回答…', skill: '正在选择任务技能…', memory: '正在读取相关学习记忆…',
+  creator: '创作者助手正在拟稿…', operations: '运营助手正在分析…', synthesis: '正在汇总两个助手的结果…'
+}
+const specialistNames = { learning: '学习助手', creator: '创作者助手', operations: '运营助手' }
+const specialists = computed(() => (snapshot.value?.specialists || []).map(role => specialistNames[role]).filter(Boolean).join('、'))
 const nodeLabel = computed(() => props.node?.status === 'running' ? nodeNames[props.node.node] || '' : '')
 
 watch(() => [props.sessionId, props.run?.id, props.run?.status, props.busy], async ([sid, rid, , busy], previous, onCleanup) => {
@@ -54,6 +59,7 @@ watch(() => [props.sessionId, props.run?.id, props.run?.status, props.busy], asy
 <template>
   <section class="agent-activity" aria-label="Agent 执行过程" :aria-busy="loading">
     <p v-if="busy && nodeLabel" role="status">{{ nodeLabel }}</p>
+    <p v-if="!busy && specialists">{{ specialists }}</p>
     <ol v-if="tools.length" class="tool-list">
       <li v-for="(tool, index) in tools" :key="tool.call_id + ':' + index">
         <strong>{{ labels[tool.name] || (tool.name.startsWith('mcp_') ? 'MCP · ' + tool.name : tool.name) }}</strong>

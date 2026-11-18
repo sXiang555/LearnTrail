@@ -3,6 +3,7 @@
 from pathlib import Path
 import asyncio
 import json
+from types import SimpleNamespace
 from typing import Annotated, TypedDict
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -19,11 +20,11 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from learntrail_agent.agent.loop import AgentLoop, AgentState
 from learntrail_agent.agent.schemas import AgentChatRequest
-from learntrail_agent.agent.tools import ToolContext, ToolExecutor
+from learntrail_agent.agent.tools import Tool, ToolContext, ToolExecutor
 from learntrail_agent.agent.tools import ToolOutput
 from learntrail_agent.errors import AppError
 from learntrail_agent.storage.checkpoints import CheckpointCipher, SessionCheckpointer, thread_id, load_checkpoint_key
-from test_tool_core import registry, reply, call, context
+from test_tool_core import EchoArgs, call, context, echo, registry, reply
 from test_agent_sessions import service
 from test_postgres_integration import postgres_repository
 
@@ -88,6 +89,55 @@ async def test_real_postgres_pause_new_service_resume_and_encrypted_private_prot
     assert request.messages[2].reasoning_content.get_secret_value()=="PRIVATE-PROVIDER-REASONING"
     detail=await repo.detail(41,sid,100,0)
     assert len(detail.messages)==2 and detail.messages[-1].content=="恢复后的回答"
+
+
+@pytest.mark.asyncio
+async def test_postgres_resumes_collaboration_and_streams_only_synthesis(graph_repository, settings) -> None:
+    repo = graph_repository
+    session = await repo.create(41, "协作恢复")
+    articles = Tool("search_articles", "Test article search", EchoArgs, echo, "read")
+    operator_access = SimpleNamespace(can_operate=AsyncMock(return_value=True))
+    first, initial_model, _ = service(repo, settings)
+    first.tools.articles = operator_access
+    first.checkpointer = saver(repo)
+    first.loop.registry.register(articles)
+    initial_model.complete_with_tools.side_effect = [reply(calls=[call("search_articles")])]
+    prepared = await first.prepare(41, session.id, AgentChatRequest(
+        content="先做内容盘点，再写大纲", assistant="collaborate", pause_before_tools=True,
+    ), "token")
+    paused = await first.execute(prepared)
+    assert paused.status == "paused"
+
+    restarted, model, _ = service(repo, settings)
+    restarted.tools.articles = operator_access
+    restarted.checkpointer = saver(repo)
+    restarted.loop.registry.register(articles)
+    model.complete_with_tools.side_effect = [
+        reply(content="运营盘点报告"), reply(content="创作者内部草案"), reply(content="汇总后的最终答复"),
+    ]
+    operator_access.can_operate.return_value = False
+    for action in (restarted.prepare_resume, restarted.workflow_state, restarted.trace):
+        with pytest.raises(AppError) as denied:
+            await action(41, session.id, paused.run_id, "token")
+        assert denied.value.code == "OPERATIONS_FORBIDDEN"
+    model.complete_with_tools.assert_not_awaited()
+    operator_access.can_operate.return_value = True
+    restored = await restarted.prepare_resume(41, session.id, paused.run_id, "token")
+    events = [event async for event in restarted.stream(restored, AsyncMock(return_value=False))]
+
+    assert "".join(data["content"] for kind, data in events if kind == "delta") == "汇总后的最终答复"
+    assert events[-1][0] == "done"
+    assert events[-1][1]["model_calls"] == 4
+    assert events[-1][1]["tool_calls"] == 1
+    assert events[-1][1]["usage"]["total_tokens"] == 8
+    graph = await restarted.workflow_state(41, session.id, paused.run_id, "token")
+    assert graph["specialists"] == ["operations", "creator"]
+    detail = await repo.detail(41, session.id, 100, 0)
+    assert len(detail.messages) == 2 and detail.messages[-1].content == "汇总后的最终答复"
+    operator_access.can_operate.return_value = False
+    visible = await restarted.sanitize_detail(41, detail, "token")
+    assert visible.messages[-1].redacted
+    assert "汇总后的最终答复" not in visible.messages[-1].content
 
 
 @pytest.mark.asyncio

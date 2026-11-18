@@ -9,7 +9,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from learntrail_agent.agent.tools import Tool, ToolContext, ToolOutput, ToolRegistry
-from learntrail_agent.clients.java import AuthorizedArticle, JavaArticleClient
+from learntrail_agent.clients.java import (
+    ArticleAccessDenied, ArticleSort, ArticleSummary, ArticleUnavailable, AuthorizedArticle, JavaArticleClient,
+)
 from learntrail_agent.clients.learning import JavaLearningClient
 from learntrail_agent.errors import AppError
 from learntrail_agent.rag.retriever import Retriever
@@ -29,6 +31,7 @@ class ArticleArgs(BaseModel):
                                description="当前 Java 无分类字段；非空时明确返回不支持，不代替关键词查询。")
     page_no: int = Field(default=1, ge=1, le=100000)
     page_size: int = Field(default=5, ge=1, le=10)
+    sort: ArticleSort = Field(default="newest", description="newest 按发布时间，likes 按点赞量，views 按阅读量。")
 
 
 class ProgressArgs(BaseModel):
@@ -53,7 +56,9 @@ class LearnTrailTools:
         registry = ToolRegistry()
         registry.register(Tool("search_knowledge_base", "检索当前用户已索引且经 Java 确认可读的文章知识。返回引用原文和位置；无结果不代表已搜索所有未索引文章。",
                                KnowledgeArgs,self.knowledge,"knowledge:read",60))
-        registry.register(Tool("search_articles", "按关键词和分页查询真实已发布文章，仅返回标题和摘要。Java 暂无分类筛选；category 非空将返回不支持。",
+        registry.register(Tool("search_articles", "按关键词和分页查询已发布文章，返回标题、摘要与可用的公开计数。"
+                               "默认排序在标题摘要未命中时补查全文，按相关性返回。restricted_count 为本页已确认无权阅读的数量。"
+                               "可按点赞量或阅读量排序。Java 暂无分类筛选；category 非空将返回不支持。",
                                ArticleArgs,self.articles_page,"articles:read",30))
         registry.register(Tool("get_learning_progress", "查询当前登录用户本人课表或指定课程进度。先查本人课表再使用其 course_id，不猜测课程或用户身份；不写学习记录。",
                                ProgressArgs,self.progress,"learning:read",15))
@@ -120,18 +125,58 @@ class LearnTrailTools:
         if args.category is not None:
             raise AppError("UNSUPPORTED_CATEGORY", "现有 Java 文章 API 不支持分类。", 422)
         token=context.access_token.get_secret_value()
-        page=await self.articles.search_published(token,context.user_id,args.keyword,args.page_no,args.page_size)
+        page=await self.articles.search_published(
+            token, context.user_id, args.keyword, args.page_no, args.page_size, sort=args.sort,
+        )
+        scope = "public_title_summary"
+        full_text_unavailable = False
+        if not page.total and args.keyword and args.sort == "newest" and args.page_no <= 500:
+            try:
+                page = await self.articles.search_full_text(
+                    token, context.user_id, args.keyword, args.page_no, args.page_size,
+                )
+                scope = "public_full_text"
+            except AppError as error:
+                if error.code != "JAVA_READ_UNAVAILABLE":
+                    raise
+                full_text_unavailable = True
+        queried_at=datetime.now(timezone.utc).isoformat()
         articles,evidence=[],[]
+        denied = set()
         for item in page.items:
-            source=await self.articles.get_published_article(item.slug,token)
+            try:
+                source=await self.articles.get_published_article(item.slug,token)
+            except ArticleAccessDenied:
+                denied.add((item.id, item.slug))
+                continue
+            except ArticleUnavailable:
+                continue
             if source.user_id!=context.user_id or source.article.id!=item.id:
                 raise AppError("AGENT_SOURCE_CHANGED", "文章查询结果已变化。", 409, True)
             article=source.article
             articles.append({"article_id":str(article.id),"slug":article.slug,"title":article.title,
-                "summary":article.summary,"source_type":article.source_type,"url":"/#/articles/"+article.slug})
+                "summary":article.summary,"source_type":article.source_type,"url":"/#/articles/"+article.slug,
+                "views":item.view_times if isinstance(item, ArticleSummary) else None,
+                "likes":item.liked_times if isinstance(item, ArticleSummary) else None})
             evidence.append(self.article_evidence(source))
-        return ToolOutput(data={"total":page.total,"pages":page.pages,"page_no":args.page_no,
-                                "page_size":args.page_size,"category_filter_supported":False,"articles":articles},
+        restricted_count = 0
+        if denied:
+            published = await self.articles.published_links(
+                token, context.user_id, sorted({article_id for article_id, _ in denied}),
+            )
+            restricted_count = len(denied & published)
+        if articles:
+            status = "retrieved"
+        elif restricted_count:
+            status = "restricted"
+        else:
+            status = "no_readable_results" if page.total else "no_match"
+        return ToolOutput(data={"status":status,"search_scope":scope,"restricted_count":restricted_count,
+                                "full_text_unavailable":full_text_unavailable,
+                                "total":page.total,"pages":page.pages,"page_no":args.page_no,
+                                "page_size":args.page_size,"sort":"relevance" if scope=="public_full_text" else args.sort,
+                                "as_of":queried_at,
+                                "category_filter_supported":False,"articles":articles},
                           evidence=evidence)
 
     async def progress(self, arguments: BaseModel, context: ToolContext) -> ToolOutput:
